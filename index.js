@@ -28,13 +28,13 @@ import {
 
 // --- Configuração do Firebase ---
 const firebaseConfig = {
-  apiKey: "AIzaSyDLmAWFcwm3IGAHOIJA6DieV0E5wNY5Bzo",
-  authDomain: "psiquizz-ai-pro.firebaseapp.com",
-  projectId: "psiquizz-ai-pro",
-  storageBucket: "psiquizz-ai-pro.firebasestorage.app",
-  messagingSenderId: "1083017817252",
-  appId: "1:1083017817252:web:6b35a982ed42667c09ca31",
-  measurementId: "G-B86WKQRN2J"
+  apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
+  authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.REACT_APP_FIREBASE_APP_ID,
+  measurementId: process.env.REACT_APP_FIREBASE_MEASUREMENT_ID
 };
 
 // Inicializa o Firebase e exporta os serviços
@@ -883,7 +883,7 @@ export default function App() {
       const prompt = `${context}\n\nO usuário pergunta: ${input}\n\nResponda como uma mentora de IA amigável e prestativa. Se a pergunta for sobre um tópico geral, use suas habilidades de busca para encontrar a informação mais atual.`;
 
       try {
-          const apiKey = ""; 
+          const apiKey = process.env.REACT_APP_GEMINI_API_KEY;
           const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
           const payload = {
               contents: [{ parts: [{ text: prompt }] }],
@@ -935,7 +935,7 @@ export default function App() {
         .replace('{context}', config.context ? `- Use o seguinte texto como base: "${config.context}"` : '');
 
     try {
-        const apiKey = ""; 
+        const apiKey = process.env.REACT_APP_GEMINI_API_KEY;
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
         const payload = { contents: [{ parts: [{ text: finalPrompt }] }], generationConfig: { responseMimeType: "application/json" } };
         const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -969,7 +969,7 @@ export default function App() {
         .replace('{results}', resultsText);
     
     try {
-        const apiKey = "";
+        const apiKey = process.env.REACT_APP_GEMINI_API_KEY;
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
         const payload = { contents: [{ parts: [{ text: finalPrompt }] }] };
         const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
