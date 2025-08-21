@@ -15,7 +15,7 @@ const LibraryPage = () => {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `${process.env.PUBLIC_URL}/pdf.worker.min.js`;
   }, []);
 
   // Carregar materiais da biblioteca

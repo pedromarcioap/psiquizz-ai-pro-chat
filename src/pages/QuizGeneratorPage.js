@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../services/firebase';
 import { collection, getDocs, addDoc, Timestamp } from 'firebase/firestore';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { useAuth } from '../utils/hooks';
 
 const QuizGeneratorPage = () => {
+  const { user } = useAuth();
   const [materials, setMaterials] = useState([]);
   const [selectedMaterial, setSelectedMaterial] = useState('');
   const [quizConfig, setQuizConfig] = useState({
@@ -21,9 +23,10 @@ const QuizGeneratorPage = () => {
 
   // Carregar materiais da biblioteca
   useEffect(() => {
+    if (!user) return;
     const loadMaterials = async () => {
       try {
-        const querySnapshot = await getDocs(collection(db, 'materials'));
+        const querySnapshot = await getDocs(collection(db, 'users', user.uid, 'library'));
         const materialsData = querySnapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
@@ -35,7 +38,7 @@ const QuizGeneratorPage = () => {
     };
 
     loadMaterials();
-  }, []);
+  }, [user]);
 
   // Função para lidar com mudanças no formulário
   const handleConfigChange = (e) => {
@@ -123,14 +126,15 @@ const QuizGeneratorPage = () => {
 
   // Função para salvar o quiz gerado
   const handleSaveQuiz = async () => {
-    if (!generatedQuiz) return;
+    if (!generatedQuiz || !user) return;
 
     try {
-      await addDoc(collection(db, 'quizHistory'), {
+      await addDoc(collection(db, 'users', user.uid, 'quizzes'), {
         topic: quizConfig.topic,
         difficulty: quizConfig.difficulty,
         questions: generatedQuiz.questions,
-        timestamp: Timestamp.fromDate(new Date())
+        createdAt: Timestamp.fromDate(new Date()),
+        materialId: selectedMaterial || null,
       });
 
       alert('Quiz salvo com sucesso!');
