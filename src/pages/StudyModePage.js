@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../services/firebase';
-import { collection, getDocs, query, orderBy, limit, addDoc, Timestamp } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, limit, addDoc, Timestamp, doc, getDoc } from 'firebase/firestore';
 import { useAuth } from '../utils/hooks';
+import { useLocation } from 'react-router-dom';
 
 const StudyModePage = () => {
   const { user } = useAuth();
@@ -15,10 +16,38 @@ const StudyModePage = () => {
   const [timeLeft, setTimeLeft] = useState(null);
   const [isTimerActive, setIsTimerActive] = useState(false);
 
-  // Carregar quizzes do histórico
+  const location = useLocation();
+
+  // Carregar quizzes do histórico ou quiz específico da URL
   useEffect(() => {
     if (!user) return;
-    const loadQuizzes = async () => {
+
+    const loadInitialQuiz = async () => {
+      const params = new URLSearchParams(location.search);
+      const quizIdFromUrl = params.get('quizId');
+
+      if (quizIdFromUrl) {
+        try {
+          const quizDocRef = doc(db, 'users', user.uid, 'quizzes', quizIdFromUrl);
+          const quizDocSnap = await getDoc(quizDocRef);
+          if (quizDocSnap.exists()) {
+            const quizData = { id: quizDocSnap.id, ...quizDocSnap.data(), createdAt: quizDocSnap.data().createdAt?.toDate() };
+            startStudyMode(quizData);
+          } else {
+            console.warn("StudyModePage: Quiz não encontrado na URL:", quizIdFromUrl);
+            // Se o quiz da URL não for encontrado, carrega os quizzes normais
+            loadQuizzesList();
+          }
+        } catch (err) {
+          console.error('StudyModePage: Erro ao carregar quiz da URL:', err);
+          loadQuizzesList(); // Em caso de erro, carrega a lista normal
+        }
+      } else {
+        loadQuizzesList();
+      }
+    };
+
+    const loadQuizzesList = async () => {
       try {
         const q = query(collection(db, 'users', user.uid, 'quizzes'), orderBy('createdAt', 'desc'), limit(10));
         const querySnapshot = await getDocs(q);
@@ -29,12 +58,12 @@ const StudyModePage = () => {
         }));
         setQuizzes(quizzesData);
       } catch (err) {
-        console.error('Erro ao carregar quizzes:', err);
+        console.error('StudyModePage: Erro ao carregar quizzes:', err);
       }
     };
 
-    loadQuizzes();
-  }, [user]);
+    loadInitialQuiz();
+  }, [user, location.search]); // Adiciona location.search como dependência
 
   useEffect(() => {
     if (!isTimerActive || timeLeft === null) return;
@@ -102,6 +131,7 @@ const StudyModePage = () => {
     
     // Mostrar explicação
     setShowExplanation(true);
+    console.log("StudyModePage: After answering - Current Score:", score + (isCorrect ? 1 : 0), "Total Questions:", selectedQuiz.questions.length);
   };
 
   // Função para ir para a próxima pergunta ou finalizar
@@ -125,18 +155,27 @@ const StudyModePage = () => {
     const totalTime = selectedQuiz.questions.length * timePerQuestion;
     const timeSpent = totalTime - timeLeft;
 
+    const finalScore = answers.filter(answer => answer.isCorrect).length; // Recalcular score com base nas respostas
+
+    const attemptData = {
+      quizId: selectedQuiz.id,
+      topic: selectedQuiz.topic,
+      score: finalScore, // Usar o score recalculado
+      totalQuestions: selectedQuiz.questions.length,
+      attemptedAt: Timestamp.now(),
+      timeSpent,
+      answers,
+    };
+
+    console.log("StudyModePage: Attempting to save quiz attempt.");
+    console.log("StudyModePage: Final Score (recalculated):", finalScore, "Total Questions in Quiz:", selectedQuiz.questions.length);
+    console.log("StudyModePage: Attempt Data:", attemptData);
+
     try {
-      await addDoc(collection(db, 'users', user.uid, 'quizAttempts'), {
-        quizId: selectedQuiz.id,
-        topic: selectedQuiz.topic,
-        score,
-        totalQuestions: selectedQuiz.questions.length,
-        attemptedAt: Timestamp.now(),
-        timeSpent,
-        answers,
-      });
+      await addDoc(collection(db, 'users', user.uid, 'quizAttempts'), attemptData);
+      console.log("StudyModePage: Quiz attempt saved successfully!");
     } catch (err) {
-      console.error("Erro ao salvar a tentativa de quiz:", err);
+      console.error("StudyModePage: Erro ao salvar a tentativa de quiz:", err);
     }
   };
 
@@ -181,7 +220,7 @@ const StudyModePage = () => {
                       {quiz.questions?.length} perguntas • Dificuldade: {quiz.difficulty}
                     </p>
                     <p className="text-sm text-gray-500">
-                      Criado em: {quiz.timestamp?.toLocaleDateString('pt-BR')}
+                      Criado em: {quiz.createdAt?.toLocaleDateString('pt-BR')}
                     </p>
                   </div>
                   <button

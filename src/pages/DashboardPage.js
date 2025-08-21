@@ -8,58 +8,100 @@ import PerformanceChart from '../components/PerformanceChart';
 import TopicAnalysis from '../components/TopicAnalysis';
 
 const DashboardPage = () => {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [stats, setStats] = useState({
     averageScore: 0,
     quizzesTaken: 0,
     totalQuestions: 0,
   });
   const [recentAttempts, setRecentAttempts] = useState([]);
+  const [generatedQuizzes, setGeneratedQuizzes] = useState([]); // Novo estado para quizzes gerados
   const [loading, setLoading] = useState(true);
   const [insights, setInsights] = useState('');
 
   useEffect(() => {
-    if (!user) return;
+    if (authLoading) return;
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+
     const loadDashboardData = async () => {
+      setLoading(true);
       try {
+        // Buscar tentativas de quiz
         const attemptsQuery = query(collection(db, 'users', user.uid, 'quizAttempts'), orderBy('attemptedAt', 'desc'));
         const attemptsSnapshot = await getDocs(attemptsQuery);
         const attemptsData = attemptsSnapshot.docs.map(doc => ({ ...doc.data(), attemptedAt: doc.data().attemptedAt.toDate() }));
+        console.log("DashboardPage: Fetched attemptsData:", attemptsData); // Log de dados brutos
 
         if (attemptsData.length > 0) {
+          // Log dos dados de cada tentativa antes do cálculo
+          attemptsData.forEach((attempt, index) => {
+            console.log(`DashboardPage: Attempt ${index} - Score: ${attempt.score}, Total Questions: ${attempt.totalQuestions}`);
+          });
+
           const totalScore = attemptsData.reduce((acc, attempt) => acc + (attempt.score / attempt.totalQuestions), 0);
           const averageScore = Math.round((totalScore / attemptsData.length) * 100);
           const totalQuestions = attemptsData.reduce((acc, attempt) => acc + attempt.totalQuestions, 0);
 
-          setStats({
+          const newStats = {
             averageScore,
             quizzesTaken: attemptsData.length,
             totalQuestions,
-          });
+          };
+          setStats(newStats);
+          getStudyInsights(attemptsData, newStats);
+        } else {
+          setInsights("Realize alguns quizzes para obter insights sobre seus estudos.");
         }
         
         setRecentAttempts(attemptsData.slice(0, 3));
-        getStudyInsights(attemptsData);
-        setLoading(false);
+
+        // Buscar quizzes gerados (não realizados)
+        const generatedQuizzesQuery = query(collection(db, 'users', user.uid, 'quizzes'), orderBy('createdAt', 'desc'), limit(5));
+        const generatedQuizzesSnapshot = await getDocs(generatedQuizzesQuery);
+        const generatedQuizzesData = generatedQuizzesSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          createdAt: doc.data().createdAt?.toDate()
+        }));
+        setGeneratedQuizzes(generatedQuizzesData); // Atualiza o estado com os quizzes gerados
+
       } catch (err) {
         console.error('Erro ao carregar dados do dashboard:', err);
+      } finally {
         setLoading(false);
       }
     };
 
     loadDashboardData();
-  }, [user]);
+  }, [user, authLoading]);
 
-  const getStudyInsights = async (attempts) => {
-    if (attempts.length < 3) return "Continue estudando para receber insights.";
+  const getStudyInsights = async (attempts, currentStats) => {
+    if (attempts.length < 3) {
+      setInsights("Continue estudando para receber insights mais detalhados.");
+      return;
+    }
 
-    const prompt = `Analise os seguintes dados de desempenho de um estudante em quizzes e forneça insights e um plano de estudos conciso:
-    - Média de acertos: ${stats.averageScore}%
-    - Quizzes realizados: ${stats.quizzesTaken}
-    - Desempenho por tópico: ${JSON.stringify(attempts.map(a => ({ topic: a.topic, score: (a.score / a.totalQuestions) * 100 })))}
-    - Tempo médio gasto: ${attempts.reduce((acc, a) => acc + a.timeSpent, 0) / attempts.length} segundos por quiz.
+    const topicPerformance = attempts.map(a => ({
+      topic: a.topic,
+      score: Math.round((a.score / a.totalQuestions) * 100)
+    }));
+    
+    const averageTime = attempts.reduce((acc, a) => acc + (a.timeSpent || 0), 0) / attempts.length;
 
-    Forneça uma análise curta e 2-3 ações práticas para o plano de estudos.`;
+    const prompt = `
+    Análise os seguintes dados de desempenho de um estudante em quizzes e forneça uma análise e um plano de estudos conciso.
+    **Dados:**
+    - **Média Geral de Acertos:** ${currentStats.averageScore}%
+    - **Quizzes Realizados:** ${currentStats.quizzesTaken}
+    - **Desempenho por Tópico (pontuação %):** ${JSON.stringify(topicPerformance)}
+    - **Tempo Médio Gasto por Quiz:** ${averageTime.toFixed(2)} segundos.
+
+    **Instruções:**
+    1.  **Análise:** Com base nos dados, identifique pontos fortes e áreas que precisam de melhoria. Se houver inconsistências (ex: média 0% com quizzes realizados), aponte o problema.
+    2.  **Plano de Estudos:** Forneça 2 a 3 ações práticas e específicas para o estudante melhorar seu desempenho.`;
 
     try {
       const genAI = new GoogleGenerativeAI(process.env.REACT_APP_GEMINI_API_KEY);
@@ -72,6 +114,14 @@ const DashboardPage = () => {
       setInsights("Não foi possível gerar insights no momento.");
     }
   };
+
+  if (authLoading || loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto py-8 px-4">
@@ -133,12 +183,46 @@ const DashboardPage = () => {
       {/* Análise de Desempenho */}
       <div className="bg-white shadow rounded-lg p-6 mb-8">
         <h2 className="text-xl font-semibold mb-4">Análise de Desempenho</h2>
-        <PerformanceChart attempts={recentAttempts} />
+        <PerformanceChart attempts={attemptsData} />
         <div className="mt-4">
-          <TopicAnalysis attempts={recentAttempts} />
+          <TopicAnalysis attempts={attemptsData} />
         </div>
       </div>
 
+      {/* Quizzes Gerados */}
+      <div className="bg-white shadow rounded-lg p-6 mb-8">
+        <h2 className="text-xl font-semibold mb-4">Seus Quizzes Gerados</h2>
+        {loading ? (
+          <div className="flex items-center justify-center h-32">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+          </div>
+        ) : generatedQuizzes.length === 0 ? (
+          <p className="text-gray-500">Nenhum quiz gerado ainda. Crie um novo quiz!</p>
+        ) : (
+          <div className="space-y-4">
+            {generatedQuizzes.map((quiz) => (
+              <div key={quiz.id} className="border border-gray-200 rounded-lg p-4 flex justify-between items-center">
+                <div>
+                  <h3 className="font-medium text-gray-900">{quiz.topic}</h3>
+                  <p className="text-sm text-gray-500">
+                    {quiz.questions?.length} perguntas • Dificuldade: {quiz.difficulty}
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    Criado em: {quiz.createdAt?.toLocaleDateString('pt-BR')}
+                  </p>
+                </div>
+                <Link
+                  to={`/study-mode?quizId=${quiz.id}`} // Link para o modo de estudo
+                  className="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                >
+                  Estudar
+                </Link>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      
       {/* Recomendação do Dia */}
       <div className="bg-white shadow rounded-lg p-6 mb-8">
         <h2 className="text-xl font-semibold mb-4">Plano de Estudos Inteligente</h2>
