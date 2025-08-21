@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../services/firebase';
-import { collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, limit, addDoc, Timestamp } from 'firebase/firestore';
+import { useAuth } from '../utils/hooks';
 
 const StudyModePage = () => {
+  const { user } = useAuth();
   const [quizzes, setQuizzes] = useState([]);
   const [selectedQuiz, setSelectedQuiz] = useState(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -10,17 +12,20 @@ const StudyModePage = () => {
   const [showExplanation, setShowExplanation] = useState(false);
   const [score, setScore] = useState(0);
   const [answers, setAnswers] = useState([]);
+  const [timeLeft, setTimeLeft] = useState(null);
+  const [isTimerActive, setIsTimerActive] = useState(false);
 
   // Carregar quizzes do histórico
   useEffect(() => {
+    if (!user) return;
     const loadQuizzes = async () => {
       try {
-        const q = query(collection(db, 'quizHistory'), orderBy('timestamp', 'desc'), limit(10));
+        const q = query(collection(db, 'users', user.uid, 'quizzes'), orderBy('createdAt', 'desc'), limit(10));
         const querySnapshot = await getDocs(q);
         const quizzesData = querySnapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data(),
-          timestamp: doc.data().timestamp?.toDate()
+          createdAt: doc.data().createdAt?.toDate()
         }));
         setQuizzes(quizzesData);
       } catch (err) {
@@ -29,7 +34,25 @@ const StudyModePage = () => {
     };
 
     loadQuizzes();
-  }, []);
+  }, [user]);
+
+  useEffect(() => {
+    if (!isTimerActive || timeLeft === null) return;
+
+    if (timeLeft === 0) {
+      setIsTimerActive(false);
+      // Finaliza o quiz automaticamente
+      setCurrentQuestionIndex(selectedQuiz.questions.length);
+      handleSaveAttempt();
+      return;
+    }
+
+    const timerId = setInterval(() => {
+      setTimeLeft(prevTime => prevTime - 1);
+    }, 1000);
+
+    return () => clearInterval(timerId);
+  }, [isTimerActive, timeLeft]);
 
   // Função para iniciar o modo de estudo
   const startStudyMode = (quiz) => {
@@ -39,6 +62,9 @@ const StudyModePage = () => {
     setShowExplanation(false);
     setScore(0);
     setAnswers([]);
+    const timePerQuestion = 60; // 60 segundos por questão
+    setTimeLeft(quiz.questions.length * timePerQuestion);
+    setIsTimerActive(true);
   };
 
   // Função para lidar com a seleção de uma opção
@@ -87,7 +113,30 @@ const StudyModePage = () => {
       setShowExplanation(false);
     } else {
       // Finalizar quiz
+      handleSaveAttempt();
       setShowExplanation(false);
+      setIsTimerActive(false);
+    }
+  };
+
+  const handleSaveAttempt = async () => {
+    if (!user || !selectedQuiz) return;
+    const timePerQuestion = 60;
+    const totalTime = selectedQuiz.questions.length * timePerQuestion;
+    const timeSpent = totalTime - timeLeft;
+
+    try {
+      await addDoc(collection(db, 'users', user.uid, 'quizAttempts'), {
+        quizId: selectedQuiz.id,
+        topic: selectedQuiz.topic,
+        score,
+        totalQuestions: selectedQuiz.questions.length,
+        attemptedAt: Timestamp.now(),
+        timeSpent,
+        answers,
+      });
+    } catch (err) {
+      console.error("Erro ao salvar a tentativa de quiz:", err);
     }
   };
 
@@ -103,6 +152,13 @@ const StudyModePage = () => {
   // Função para voltar à seleção de quizzes
   const handleBackToQuizzes = () => {
     setSelectedQuiz(null);
+    setIsTimerActive(false);
+  };
+
+  const formatTime = (seconds) => {
+    const minutes = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
   if (!selectedQuiz) {
@@ -212,8 +268,9 @@ const StudyModePage = () => {
         // Tela de pergunta
         <div className="bg-white shadow rounded-lg p-6">
           <div className="mb-6">
-            <div className="flex justify-between text-sm text-gray-600 mb-1">
+            <div className="flex justify-between items-center text-sm text-gray-600 mb-1">
               <span>Pergunta {currentQuestionIndex + 1} de {selectedQuiz.questions.length}</span>
+              <span className="font-semibold text-lg text-gray-800">{formatTime(timeLeft)}</span>
               <span>Pontuação: {score}</span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-2">

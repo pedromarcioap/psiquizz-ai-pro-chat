@@ -2,37 +2,44 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../services/firebase';
 import { collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
 import { Link } from 'react-router-dom';
+import { useAuth } from '../utils/hooks';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import PerformanceChart from '../components/PerformanceChart';
+import TopicAnalysis from '../components/TopicAnalysis';
 
 const DashboardPage = () => {
+  const { user } = useAuth();
   const [stats, setStats] = useState({
     averageScore: 0,
     quizzesTaken: 0,
-    totalQuestions: 0
+    totalQuestions: 0,
   });
-  
-  const [recentQuizzes, setRecentQuizzes] = useState([]);
+  const [recentAttempts, setRecentAttempts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [insights, setInsights] = useState('');
 
   useEffect(() => {
+    if (!user) return;
     const loadDashboardData = async () => {
       try {
-        // Carregar estatísticas do usuário (simuladas por enquanto)
-        setStats({
-          averageScore: 75,
-          quizzesTaken: 12,
-          totalQuestions: 120
-        });
+        const attemptsQuery = query(collection(db, 'users', user.uid, 'quizAttempts'), orderBy('attemptedAt', 'desc'));
+        const attemptsSnapshot = await getDocs(attemptsQuery);
+        const attemptsData = attemptsSnapshot.docs.map(doc => ({ ...doc.data(), attemptedAt: doc.data().attemptedAt.toDate() }));
 
-        // Carregar quizzes recentes
-        const q = query(collection(db, 'quizHistory'), orderBy('timestamp', 'desc'), limit(3));
-        const querySnapshot = await getDocs(q);
-        const quizzesData = querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-          timestamp: doc.data().timestamp?.toDate()
-        }));
-        setRecentQuizzes(quizzesData);
+        if (attemptsData.length > 0) {
+          const totalScore = attemptsData.reduce((acc, attempt) => acc + (attempt.score / attempt.totalQuestions), 0);
+          const averageScore = Math.round((totalScore / attemptsData.length) * 100);
+          const totalQuestions = attemptsData.reduce((acc, attempt) => acc + attempt.totalQuestions, 0);
 
+          setStats({
+            averageScore,
+            quizzesTaken: attemptsData.length,
+            totalQuestions,
+          });
+        }
+        
+        setRecentAttempts(attemptsData.slice(0, 3));
+        getStudyInsights(attemptsData);
         setLoading(false);
       } catch (err) {
         console.error('Erro ao carregar dados do dashboard:', err);
@@ -41,7 +48,30 @@ const DashboardPage = () => {
     };
 
     loadDashboardData();
-  }, []);
+  }, [user]);
+
+  const getStudyInsights = async (attempts) => {
+    if (attempts.length < 3) return "Continue estudando para receber insights.";
+
+    const prompt = `Analise os seguintes dados de desempenho de um estudante em quizzes e forneça insights e um plano de estudos conciso:
+    - Média de acertos: ${stats.averageScore}%
+    - Quizzes realizados: ${stats.quizzesTaken}
+    - Desempenho por tópico: ${JSON.stringify(attempts.map(a => ({ topic: a.topic, score: (a.score / a.totalQuestions) * 100 })))}
+    - Tempo médio gasto: ${attempts.reduce((acc, a) => acc + a.timeSpent, 0) / attempts.length} segundos por quiz.
+
+    Forneça uma análise curta e 2-3 ações práticas para o plano de estudos.`;
+
+    try {
+      const genAI = new GoogleGenerativeAI(process.env.REACT_APP_GEMINI_API_KEY);
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      setInsights(response.text());
+    } catch (error) {
+      console.error("Erro ao gerar insights:", error);
+      setInsights("Não foi possível gerar insights no momento.");
+    }
+  };
 
   return (
     <div className="max-w-4xl mx-auto py-8 px-4">
@@ -77,21 +107,21 @@ const DashboardPage = () => {
           <div className="flex items-center justify-center h-32">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
           </div>
-        ) : recentQuizzes.length === 0 ? (
-          <p className="text-gray-500">Nenhum quiz realizado ainda.</p>
+        ) : recentAttempts.length === 0 ? (
+          <p className="text-gray-500">Nenhuma tentativa de quiz registrada ainda.</p>
         ) : (
           <div className="space-y-4">
-            {recentQuizzes.map((quiz) => (
-              <div key={quiz.id} className="border border-gray-200 rounded-lg p-4">
+            {recentAttempts.map((attempt, index) => (
+              <div key={index} className="border border-gray-200 rounded-lg p-4">
                 <div className="flex justify-between items-center">
-                  <h3 className="font-medium text-gray-900">{quiz.topic}</h3>
+                  <h3 className="font-medium text-gray-900">{attempt.topic}</h3>
                   <span className="text-sm text-gray-500">
-                    {quiz.timestamp?.toLocaleDateString('pt-BR')}
+                    {attempt.attemptedAt?.toLocaleDateString('pt-BR')}
                   </span>
                 </div>
                 <div className="mt-2 flex items-center">
                   <span className="text-sm font-medium text-gray-700">
-                    Pontuação: {quiz.score}/{quiz.totalQuestions} ({Math.round((quiz.score/quiz.totalQuestions)*100)}%)
+                    Pontuação: {attempt.score}/{attempt.totalQuestions} ({Math.round((attempt.score / attempt.totalQuestions) * 100)}%)
                   </span>
                 </div>
               </div>
@@ -100,14 +130,24 @@ const DashboardPage = () => {
         )}
       </div>
       
+      {/* Análise de Desempenho */}
+      <div className="bg-white shadow rounded-lg p-6 mb-8">
+        <h2 className="text-xl font-semibold mb-4">Análise de Desempenho</h2>
+        <PerformanceChart attempts={recentAttempts} />
+        <div className="mt-4">
+          <TopicAnalysis attempts={recentAttempts} />
+        </div>
+      </div>
+
       {/* Recomendação do Dia */}
       <div className="bg-white shadow rounded-lg p-6 mb-8">
-        <h2 className="text-xl font-semibold mb-4">Recomendação do Dia</h2>
+        <h2 className="text-xl font-semibold mb-4">Plano de Estudos Inteligente</h2>
         <div className="bg-highlight p-4 rounded-lg">
-          <p className="text-gray-800">
-            <span className="font-semibold">Dica de Estudo:</span> Revise regularmente os conceitos que você teve mais dificuldade. 
-            A repetição espaçada é uma técnica comprovada para melhorar a retenção de longo prazo.
-          </p>
+          {insights ? (
+            <p className="text-gray-800 whitespace-pre-wrap">{insights}</p>
+          ) : (
+            <p className="text-gray-500">Gerando insights...</p>
+          )}
         </div>
       </div>
       
