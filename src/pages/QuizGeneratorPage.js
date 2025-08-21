@@ -16,6 +16,8 @@ const QuizGeneratorPage = () => {
   const [generatedQuiz, setGeneratedQuiz] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [userAnswers, setUserAnswers] = useState({});
+  const [showResults, setShowResults] = useState(false);
 
   // Carregar materiais da biblioteca
   useEffect(() => {
@@ -135,6 +137,19 @@ const QuizGeneratorPage = () => {
     } catch (err) {
       setError('Erro ao salvar quiz: ' + err.message);
     }
+  };
+
+  // Função para lidar com a seleção de resposta
+  const handleAnswerSelection = (questionIndex, selectedOption) => {
+    setUserAnswers(prev => ({
+      ...prev,
+      [questionIndex]: selectedOption
+    }));
+  };
+
+  // Função para verificar as respostas
+  const handleCheckAnswers = () => {
+    setShowResults(true);
   };
 
   return (
@@ -273,32 +288,70 @@ const QuizGeneratorPage = () => {
                 <h3 className="font-medium text-gray-900 mb-2">
                   {index + 1}. {question.question}
                 </h3>
-                <ul className="list-disc pl-5 space-y-1">
-                  {question.options.map((option, optIndex) => (
-                    <li 
-                      key={optIndex} 
-                      className={option === question.correctAnswer ? 'font-semibold text-green-600' : ''}
-                    >
-                      {option} {option === question.correctAnswer && '(Resposta correta)'}
-                    </li>
-                  ))}
-                </ul>
-                <div className="mt-2 p-2 bg-blue-50 rounded">
-                  <p className="text-sm text-gray-700">
-                    <span className="font-semibold">Explicação:</span> {question.explanation}
-                  </p>
+                <div className="space-y-2">
+                  {question.options.map((option, optIndex) => {
+                    const isSelected = userAnswers[index] === option;
+                    const isCorrect = question.correctAnswer === option;
+                    let buttonClass = 'w-full text-left p-2 rounded-md border';
+
+                    if (showResults) {
+                      if (isCorrect) {
+                        buttonClass += ' bg-green-100 border-green-300 text-green-800';
+                      } else if (isSelected && !isCorrect) {
+                        buttonClass += ' bg-red-100 border-red-300 text-red-800';
+                      } else {
+                        buttonClass += ' bg-gray-50 border-gray-200';
+                      }
+                    } else {
+                      buttonClass += isSelected ? ' bg-indigo-100 border-indigo-300' : ' bg-white hover:bg-gray-50';
+                    }
+
+                    return (
+                      <button
+                        key={optIndex}
+                        onClick={() => !showResults && handleAnswerSelection(index, option)}
+                        className={buttonClass}
+                        disabled={showResults}
+                      >
+                        {option}
+                      </button>
+                    );
+                  })}
                 </div>
+                {showResults && (
+                  <div className="mt-3 p-3 bg-blue-50 rounded-lg">
+                    <p className="text-sm text-gray-800">
+                      <span className="font-semibold">Resposta correta:</span> {question.correctAnswer}
+                    </p>
+                    <p className="text-sm text-gray-700 mt-1">
+                      <span className="font-semibold">Explicação:</span> {question.explanation}
+                    </p>
+                  </div>
+                )}
               </div>
             ))}
           </div>
           
           <div className="mt-6 flex space-x-4">
-            <button
-              onClick={() => setGeneratedQuiz(null)}
-              className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-            >
-              Gerar Novo Quiz
-            </button>
+            {!showResults ? (
+              <button
+                onClick={handleCheckAnswers}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+              >
+                Verificar Respostas
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  setGeneratedQuiz(null);
+                  setUserAnswers({});
+                  setShowResults(false);
+                }}
+                className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+              >
+                Gerar Novo Quiz
+              </button>
+            )}
             <button
               onClick={handleSaveQuiz}
               className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"

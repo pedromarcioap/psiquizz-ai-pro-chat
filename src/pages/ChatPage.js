@@ -3,6 +3,7 @@ import { db } from '../services/firebase';
 import { collection, addDoc, getDocs, deleteDoc, query, orderBy, Timestamp } from 'firebase/firestore';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { useAuth } from '../utils/hooks';
+import ReactMarkdown from 'react-markdown';
 
 const ChatPage = () => {
   const { user } = useAuth();
@@ -79,10 +80,11 @@ const ChatPage = () => {
       const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" }); // Usar modelo mais recente
       
       // Adicionar tratamento de erro mais detalhado
+      let aiText; // Mover a declaração para fora do try
       try {
         const result = await model.generateContent(finalPrompt);
         const response = await result.response;
-        const aiText = response.text();
+        aiText = response.text(); // Atribuir valor aqui
         
         // Verificar se a resposta é válida
         if (!aiText || aiText.trim() === '') {
@@ -170,7 +172,7 @@ const ChatPage = () => {
                       : 'bg-gray-100 text-gray-900 rounded-bl-none'
                   }`}
                 >
-                  <div className="text-sm">{message.content}</div>
+                  <div className="text-sm prose"><ReactMarkdown>{message.content}</ReactMarkdown></div>
                   <div className="text-xs mt-1 text-gray-500">
                     {message.timestamp?.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                   </div>
