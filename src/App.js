@@ -34,14 +34,14 @@ function App() {
         {user && <Navbar />}
         <main className="flex-grow">
           <Routes>
-            <Route path="/auth" element={!user ? <AuthPage /> : <Navigate to="/dashboard" />} />
-            <Route path="/dashboard" element={user ? <DashboardPage /> : <Navigate to="/auth" />} />
-            <Route path="/library" element={user ? <LibraryPage /> : <Navigate to="/auth" />} />
-            <Route path="/chat" element={user ? <ChatPage /> : <Navigate to="/auth" />} />
-            <Route path="/quiz-generator" element={user ? <QuizGeneratorPage /> : <Navigate to="/auth" />} />
-            <Route path="/study-mode" element={user ? <StudyModePage /> : <Navigate to="/auth" />} />
-            <Route path="/settings" element={user ? <SettingsPage /> : <Navigate to="/auth" />} />
-            <Route path="*" element={<Navigate to={user ? "/dashboard" : "/auth"} />} />
+            <Route path="/auth" element={<AuthPage />} />
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/library" element={<LibraryPage />} />
+            <Route path="/chat" element={<ChatPage />} />
+            <Route path="/quiz-generator" element={<QuizGeneratorPage />} />
+            {/* A rota /study-mode não é mais necessária como uma página separada */}
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="*" element={<Navigate to="/dashboard" />} />
           </Routes>
         </main>
         <Footer />

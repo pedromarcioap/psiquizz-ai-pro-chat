@@ -13,7 +13,7 @@
     "postinstall": "node copy-pdf-worker.js"
   },
   "dependencies": {
-    "@genkit-ai/mcp": "^1.16.1",
+    "@genkit-ai/mcp": "^1.17.0",
     "@google/generative-ai": "^0.1.3",
     "firebase": "^10.7.1",
     "mammoth": "^1.7.0",
