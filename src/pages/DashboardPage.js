@@ -15,6 +15,7 @@ const DashboardPage = () => {
     totalQuestions: 0,
   });
   const [recentAttempts, setRecentAttempts] = useState([]);
+  const [allAttempts, setAllAttempts] = useState([]); // Novo estado para todas as tentativas
   const [generatedQuizzes, setGeneratedQuizzes] = useState([]); // Novo estado para quizzes gerados
   const [loading, setLoading] = useState(true);
   const [insights, setInsights] = useState('');
@@ -33,14 +34,8 @@ const DashboardPage = () => {
         const attemptsQuery = query(collection(db, 'users', user.uid, 'quizAttempts'), orderBy('attemptedAt', 'desc'));
         const attemptsSnapshot = await getDocs(attemptsQuery);
         const attemptsData = attemptsSnapshot.docs.map(doc => ({ ...doc.data(), attemptedAt: doc.data().attemptedAt.toDate() }));
-        console.log("DashboardPage: Fetched attemptsData:", attemptsData); // Log de dados brutos
 
         if (attemptsData.length > 0) {
-          // Log dos dados de cada tentativa antes do cálculo
-          attemptsData.forEach((attempt, index) => {
-            console.log(`DashboardPage: Attempt ${index} - Score: ${attempt.score}, Total Questions: ${attempt.totalQuestions}`);
-          });
-
           const totalScore = attemptsData.reduce((acc, attempt) => acc + (attempt.score / attempt.totalQuestions), 0);
           const averageScore = Math.round((totalScore / attemptsData.length) * 100);
           const totalQuestions = attemptsData.reduce((acc, attempt) => acc + attempt.totalQuestions, 0);
@@ -57,6 +52,7 @@ const DashboardPage = () => {
         }
         
         setRecentAttempts(attemptsData.slice(0, 3));
+        setAllAttempts(attemptsData); // Armazena todas as tentativas no estado
 
         // Buscar quizzes gerados (não realizados)
         const generatedQuizzesQuery = query(collection(db, 'users', user.uid, 'quizzes'), orderBy('createdAt', 'desc'), limit(5));
@@ -98,7 +94,7 @@ const DashboardPage = () => {
     - **Quizzes Realizados:** ${currentStats.quizzesTaken}
     - **Desempenho por Tópico (pontuação %):** ${JSON.stringify(topicPerformance)}
     - **Tempo Médio Gasto por Quiz:** ${averageTime.toFixed(2)} segundos.
-
+    
     **Instruções:**
     1.  **Análise:** Com base nos dados, identifique pontos fortes e áreas que precisam de melhoria. Se houver inconsistências (ex: média 0% com quizzes realizados), aponte o problema.
     2.  **Plano de Estudos:** Forneça 2 a 3 ações práticas e específicas para o estudante melhorar seu desempenho.`;
@@ -183,10 +179,16 @@ const DashboardPage = () => {
       {/* Análise de Desempenho */}
       <div className="bg-white shadow rounded-lg p-6 mb-8">
         <h2 className="text-xl font-semibold mb-4">Análise de Desempenho</h2>
-        <PerformanceChart attempts={attemptsData} />
-        <div className="mt-4">
-          <TopicAnalysis attempts={attemptsData} />
-        </div>
+        {allAttempts.length > 0 ? (
+          <>
+            <PerformanceChart attempts={allAttempts} />
+            <div className="mt-4">
+              <TopicAnalysis attempts={allAttempts} />
+            </div>
+          </>
+        ) : (
+          <p className="text-gray-500">Realize alguns quizzes para ver sua análise de desempenho.</p>
+        )}
       </div>
 
       {/* Quizzes Gerados */}

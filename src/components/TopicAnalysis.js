@@ -20,7 +20,7 @@ const TopicAnalysis = ({ attempts }) => {
     average: Math.round(data.totalScore / data.count),
   })).sort((a, b) => b.average - a.average);
 
-  const bestTopic = topicAverages;
+  const bestTopic = topicAverages; // Pega o primeiro elemento após a ordenação
   const worstTopic = topicAverages[topicAverages.length - 1];
 
   return (
