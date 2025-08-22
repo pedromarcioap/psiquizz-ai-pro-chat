@@ -4,6 +4,13 @@ import { collection, getDocs, query, orderBy, limit, addDoc, Timestamp, doc, get
 import { useAuth } from '../utils/hooks';
 import { useLocation } from 'react-router-dom';
 
+const motivationalTips = [
+  "Estude com foco, mas sem pressão. Aprender é um processo!",
+  "Cada questão é uma oportunidade de evoluir.",
+  "Respire fundo e confie no seu progresso.",
+  "Errar faz parte do aprendizado. Continue!"
+];
+
 const StudyModePage = () => {
   const { user } = useAuth();
   const [quizzes, setQuizzes] = useState([]);
@@ -68,20 +75,20 @@ const StudyModePage = () => {
   useEffect(() => {
     if (!isTimerActive || timeLeft === null) return;
 
-    if (timeLeft === 0) {
+    let timerId;
+    if (timeLeft > 0) {
+      timerId = setInterval(() => {
+        setTimeLeft(prevTime => prevTime - 1);
+      }, 1000);
+    } else {
       setIsTimerActive(false);
       // Finaliza o quiz automaticamente
       setCurrentQuestionIndex(selectedQuiz.questions.length);
       handleSaveAttempt();
-      return;
     }
 
-    const timerId = setInterval(() => {
-      setTimeLeft(prevTime => prevTime - 1);
-    }, 1000);
-
     return () => clearInterval(timerId);
-  }, [isTimerActive, timeLeft]);
+  }, [isTimerActive, timeLeft, selectedQuiz, handleSaveAttempt]);
 
   // Função para iniciar o modo de estudo
   const startStudyMode = (quiz) => {

@@ -36,8 +36,12 @@ const DashboardPage = () => {
         const attemptsData = attemptsSnapshot.docs.map(doc => ({ ...doc.data(), attemptedAt: doc.data().attemptedAt.toDate() }));
 
         if (attemptsData.length > 0) {
-          const totalScore = attemptsData.reduce((acc, attempt) => acc + (attempt.score / attempt.totalQuestions), 0);
-          const averageScore = Math.round((totalScore / attemptsData.length) * 100);
+          const totalScore = attemptsData.reduce((acc, attempt) => {
+            if (!attempt || !attempt.totalQuestions || attempt.totalQuestions === 0) return acc;
+            const percent = (attempt.score / attempt.totalQuestions) * 100;
+            return acc + Math.min(Math.max(percent, 0), 100);
+          }, 0);
+          const averageScore = Math.round(totalScore / attemptsData.length);
           const totalQuestions = attemptsData.reduce((acc, attempt) => acc + attempt.totalQuestions, 0);
 
           const newStats = {

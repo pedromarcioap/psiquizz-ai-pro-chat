@@ -7,7 +7,11 @@ const PerformanceChart = ({ attempts }) => {
     return <p className="text-gray-500">Dados insuficientes para gerar o gráfico.</p>;
   }
 
-  const scores = attempts.map(a => Math.round((a.score / a.totalQuestions) * 100));
+  const scores = attempts.map(a => {
+    if (!a || !a.totalQuestions || a.totalQuestions === 0) return 0;
+    const percent = Math.round((a.score / a.totalQuestions) * 100);
+    return Math.min(Math.max(percent, 0), 100);
+  });
   const timeSpents = attempts.map(a => a.timeSpent || 0);
 
   // Encontrar o tempo máximo gasto para normalização

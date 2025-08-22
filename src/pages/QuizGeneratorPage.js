@@ -18,7 +18,8 @@ const QuizGeneratorPage = () => {
     numQuestions: 5,
     numOptions: 4
   });
-  const [generatedQuiz, setGeneratedQuiz] = useState(null);
+  const [generatedQuiz, setGeneratedQuiz] = useState({ questions: [] });
+  const [quizMode, setQuizMode] = useState('prova'); // 'prova' ou 'teste'
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -59,15 +60,18 @@ const QuizGeneratorPage = () => {
           const quizDocSnap = await getDoc(quizDocRef);
           if (quizDocSnap.exists()) {
             const quizData = { id: quizDocSnap.id, ...quizDocSnap.data(), createdAt: quizDocSnap.data().createdAt?.toDate() };
-            setGeneratedQuiz(quizData);
+            console.log("QuizGeneratorPage: Quiz carregado da URL:", quizData);
+            // Garantir que quizData tenha a propriedade questions
+            const quizDataWithQuestions = { questions: [], ...quizData };
+            setGeneratedQuiz(quizDataWithQuestions);
             setQuizConfig(prev => ({
               ...prev,
-              topic: quizData.topic,
-              difficulty: quizData.difficulty,
-              numQuestions: quizData.questions.length,
+              topic: quizDataWithQuestions.topic,
+              difficulty: quizDataWithQuestions.difficulty,
+              numQuestions: quizDataWithQuestions.questions?.length || 0,
             }));
             // Iniciar o quiz automaticamente se for carregado da URL
-            startQuiz(quizData);
+            startQuiz(quizDataWithQuestions);
           } else {
             console.warn("QuizGeneratorPage: Quiz não encontrado na URL:", quizIdFromUrl);
           }
@@ -192,7 +196,9 @@ const QuizGeneratorPage = () => {
         throw new Error('Falha ao parsear o JSON da resposta da IA');
       }
 
-      setGeneratedQuiz(quizData);
+      // Garantir que quizData tenha a propriedade questions
+      const quizDataWithQuestions = { questions: [], ...quizData };
+      setGeneratedQuiz(quizDataWithQuestions);
       setLoading(false);
     } catch (err) {
       setError('Erro ao gerar quiz: ' + err.message);
@@ -202,15 +208,28 @@ const QuizGeneratorPage = () => {
 
   // Função para iniciar o modo de estudo (agora dentro do QuizGeneratorPage)
   const startQuiz = (quizToStart = generatedQuiz) => {
-    if (!quizToStart) return;
+    console.log("startQuiz chamado. quizToStart:", quizToStart);
+    console.log("quizToStart.questions:", quizToStart?.questions);
+    // Garantir que quizToStart tenha a propriedade questions
+    const quizToStartWithQuestions = { questions: [], ...quizToStart };
+    if (!quizToStartWithQuestions || !Array.isArray(quizToStartWithQuestions.questions) || quizToStartWithQuestions.questions.length === 0) {
+      console.error("Não foi possível iniciar o quiz: O objeto do quiz ou suas questões são inválidos ou vazios.", quizToStartWithQuestions);
+      setError("Não foi possível iniciar o quiz. Por favor, gere um novo quiz ou verifique o quiz carregado.");
+      return;
+    }
     setCurrentQuestionIndex(0);
     setSelectedOption(null);
     setShowExplanation(false);
     setScore(0);
     setAnswers([]);
-    const timePerQuestion = 60; // 60 segundos por questão
-    setTimeLeft(quizToStart.questions.length * timePerQuestion);
-    setIsTimerActive(true);
+    if (quizMode === 'prova') {
+      const timePerQuestion = 60; // 60 segundos por questão
+      setTimeLeft(quizToStartWithQuestions.questions.length * timePerQuestion);
+      setIsTimerActive(true);
+    } else {
+      setTimeLeft(null);
+      setIsTimerActive(false);
+    }
     setQuizStarted(true);
   };
 
@@ -439,8 +458,30 @@ const QuizGeneratorPage = () => {
             <div className="text-center">
               <h2 className="text-2xl font-bold text-gray-900 mb-4">Quiz Gerado!</h2>
               <p className="text-gray-700 mb-6">Tópico: {quizConfig.topic}</p>
+              <div className="mb-4 flex justify-center gap-4">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="quizMode"
+                    value="prova"
+                    checked={quizMode === 'prova'}
+                    onChange={() => setQuizMode('prova')}
+                  />
+                  Modo Prova
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="quizMode"
+                    value="teste"
+                    checked={quizMode === 'teste'}
+                    onChange={() => setQuizMode('teste')}
+                  />
+                  Modo Teste
+                </label>
+              </div>
               <button
-                onClick={startQuiz}
+                onClick={() => startQuiz(generatedQuiz)}
                 className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
               >
                 Iniciar Quiz

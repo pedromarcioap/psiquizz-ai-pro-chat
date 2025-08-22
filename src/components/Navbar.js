@@ -32,9 +32,6 @@ const Navbar = () => {
               <Link to="/quiz-generator" className="px-3 py-2 rounded-md text-sm font-medium hover:bg-indigo-500">
                 Novo Quizz
               </Link>
-              <Link to="/study-mode" className="px-3 py-2 rounded-md text-sm font-medium hover:bg-indigo-500">
-                Modo de Estudo
-              </Link>
               <Link to="/chat" className="px-3 py-2 rounded-md text-sm font-medium hover:bg-indigo-500">
                 Chat com Izy
               </Link>
