@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../services/firebase';
+import { db, saveQuiz, getQuizzes, deleteQuiz } from '../services/firebase';
 import { collection, getDocs, addDoc, Timestamp, doc, getDoc } from 'firebase/firestore';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { useAuth } from '../utils/hooks';
@@ -18,10 +18,12 @@ const QuizGeneratorPage = () => {
     numQuestions: 5,
     numOptions: 4
   });
-  const [generatedQuiz, setGeneratedQuiz] = useState({ questions: [] });
+  const [generatedQuiz, setGeneratedQuiz] = useState(null);
   const [quizMode, setQuizMode] = useState('prova'); // 'prova' ou 'teste'
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [savedQuizId, setSavedQuizId] = useState(null); // Adicionado para controlar o ID do quiz salvo
+  const [userQuizzes, setUserQuizzes] = useState([]);
 
   // Estados do modo de estudo
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -50,6 +52,30 @@ const QuizGeneratorPage = () => {
         console.error('Erro ao carregar materiais:', err);
       }
 
+      // Carregar quizzes do usuário
+      try {
+        const quizzesData = await getQuizzes(user.uid);
+        setUserQuizzes(quizzesData);
+      } catch (err) {
+        console.error('Erro ao carregar quizzes do usuário:', err);
+      }
+
+      // Carregar quizzes do usuário
+      try {
+        const quizzesData = await getQuizzes(user.uid);
+        setUserQuizzes(quizzesData);
+      } catch (err) {
+        console.error('Erro ao carregar quizzes do usuário:', err);
+      }
+
+      // Carregar quizzes do usuário
+      try {
+        const quizzesData = await getQuizzes(user.uid);
+        setUserQuizzes(quizzesData);
+      } catch (err) {
+        console.error('Erro ao carregar quizzes do usuário:', err);
+      }
+
       // Carregar quiz da URL, se houver
       const params = new URLSearchParams(location.search);
       const quizIdFromUrl = params.get('quizId');
@@ -64,6 +90,7 @@ const QuizGeneratorPage = () => {
             // Garantir que quizData tenha a propriedade questions
             const quizDataWithQuestions = { questions: [], ...quizData };
             setGeneratedQuiz(quizDataWithQuestions);
+            setSavedQuizId(quizIdFromUrl); // Definir o ID do quiz salvo
             setQuizConfig(prev => ({
               ...prev,
               topic: quizDataWithQuestions.topic,
@@ -199,10 +226,50 @@ const QuizGeneratorPage = () => {
       // Garantir que quizData tenha a propriedade questions
       const quizDataWithQuestions = { questions: [], ...quizData };
       setGeneratedQuiz(quizDataWithQuestions);
+      setSavedQuizId(null); // Resetar o ID do quiz salvo ao gerar um novo
       setLoading(false);
     } catch (err) {
       setError('Erro ao gerar quiz: ' + err.message);
       setLoading(false);
+    }
+  };
+
+  // Função para salvar o quiz gerado
+  const handleSaveQuiz = async () => {
+    if (!user || !generatedQuiz) return;
+
+    try {
+      const quizToSave = {
+        ...generatedQuiz,
+        topic: quizConfig.topic,
+        difficulty: quizConfig.difficulty,
+        numQuestions: quizConfig.numQuestions,
+        numOptions: quizConfig.numOptions,
+        quizMode: quizMode,
+      };
+      const id = await saveQuiz(user.uid, quizToSave);
+      setSavedQuizId(id);
+      setUserQuizzes(prev => [...prev, { id, ...quizToSave }]);
+      alert('Quiz salvo com sucesso!');
+    } catch (err) {
+      setError('Erro ao salvar quiz: ' + err.message);
+    }
+  };
+
+  // Função para deletar o quiz
+  const handleDeleteQuiz = async () => {
+    if (!user || !savedQuizId) return;
+
+    if (window.confirm('Tem certeza que deseja deletar este quiz?')) {
+      try {
+        await deleteQuiz(savedQuizId);
+        setGeneratedQuiz(null);
+        setSavedQuizId(null);
+        setUserQuizzes(prev => prev.filter(quiz => quiz.id !== savedQuizId));
+        alert('Quiz deletado com sucesso!');
+      } catch (err) {
+        setError('Erro ao deletar quiz: ' + err.message);
+      }
     }
   };
 
@@ -455,7 +522,8 @@ const QuizGeneratorPage = () => {
         // Renderização do quiz
         <div className="bg-white shadow rounded-lg p-6">
           {!quizStarted ? (
-            <div className="text-center">
+            <>
+              <div className="text-center">
               <h2 className="text-2xl font-bold text-gray-900 mb-4">Quiz Gerado!</h2>
               <p className="text-gray-700 mb-6">Tópico: {quizConfig.topic}</p>
               <div className="mb-4 flex justify-center gap-4">
@@ -493,6 +561,36 @@ const QuizGeneratorPage = () => {
                 Gerar Novo Quiz
               </button>
             </div>
+
+            {userQuizzes.length > 0 && (
+              <div className="mt-8">
+                <h3 className="text-xl font-semibold mb-4">Seus Quizzes Salvos</h3>
+                <ul className="space-y-2">
+                  {userQuizzes.map(quiz => (
+                    <li key={quiz.id} className="flex justify-between items-center bg-gray-100 p-3 rounded-md">
+                      <span className="text-gray-800">{quiz.topic} ({quiz.difficulty})</span>
+                      <button
+                        onClick={() => {
+                          setGeneratedQuiz(quiz);
+                          setSavedQuizId(quiz.id);
+                          setQuizConfig(prev => ({
+                            ...prev,
+                            topic: quiz.topic,
+                            difficulty: quiz.difficulty,
+                            numQuestions: quiz.questions?.length || 0,
+                          }));
+                          setQuizStarted(false); // Para mostrar a tela de "Iniciar Quiz"
+                        }}
+                        className="ml-4 px-3 py-1 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
+                      >
+                        Carregar
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                </div>
+              )}
+            </>
           ) : currentQuestionIndex >= generatedQuiz.questions.length ? (
             // Tela de resultados finais
             <div className="bg-white shadow rounded-lg p-6">
@@ -505,6 +603,11 @@ const QuizGeneratorPage = () => {
                 <div className="text-lg text-gray-700">
                   Pontuação: {Math.round((score/generatedQuiz.questions.length)*100)}%
                 </div>
+                {quizMode === 'prova' && (
+                  <div className="text-md text-gray-600 mt-2">
+                    Tempo Gasto: {formatTime(generatedQuiz.questions.length * 60 - (timeLeft || 0))}
+                  </div>
+                )}
               </div>
               
               <div className="space-y-4 mb-8">
@@ -513,7 +616,7 @@ const QuizGeneratorPage = () => {
                   <div key={index} className={`border rounded-lg p-4 ${answer.isCorrect ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
                     <h4 className="font-medium text-gray-900 mb-2">{answer.question}</h4>
                     <p className="text-sm mb-1">
-                      <span className="font-medium">Sua resposta:</span> {answer.selectedOption} 
+                      <span className="font-medium">Sua resposta:</span> {answer.selectedOption}
                       {answer.isCorrect ? ' ✓' : ' ✗'}
                     </p>
                     {!answer.isCorrect && (
@@ -542,6 +645,22 @@ const QuizGeneratorPage = () => {
                   Gerar Novo Quiz
                 </button>
               </div>
+              {user && generatedQuiz && !savedQuizId && (
+                <button
+                  onClick={handleSaveQuiz}
+                  className="ml-4 inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                >
+                  Salvar Quiz
+                </button>
+              )}
+              {user && savedQuizId && (
+                <button
+                  onClick={handleDeleteQuiz}
+                  className="ml-4 inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                >
+                  Deletar Quiz
+                </button>
+              )}
             </div>
           ) : (
             // Tela de pergunta
@@ -549,12 +668,14 @@ const QuizGeneratorPage = () => {
               <div className="mb-6">
                 <div className="flex justify-between items-center text-sm text-gray-600 mb-1">
                   <span>Pergunta {currentQuestionIndex + 1} de {generatedQuiz.questions.length}</span>
-                  <span className="font-semibold text-lg text-gray-800">{formatTime(timeLeft)}</span>
+                  {quizMode === 'prova' && (
+                    <span className="font-semibold text-lg text-gray-800">Tempo Restante: {formatTime(timeLeft)}</span>
+                  )}
                   <span>Pontuação: {score}</span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div 
-                    className="bg-indigo-600 h-2 rounded-full" 
+                  <div
+                    className="bg-indigo-600 h-2 rounded-full"
                     style={{ width: `${progress}%` }}
                   ></div>
                 </div>
@@ -572,15 +693,15 @@ const QuizGeneratorPage = () => {
                       onClick={() => handleOptionSelect(option)}
                       disabled={showExplanation}
                       className={`w-full text-left p-3 rounded-lg border transition-colors ${
-                        selectedOption === option 
+                        selectedOption === option
                           ? showExplanation && option === currentQuestion.correctAnswer
-                            ? 'border-green-500 bg-green-50' 
-                            : showExplanation && option !== currentQuestion.correctAnswer && selectedOption === option
-                              ? 'border-red-500 bg-red-50'
-                              : 'border-indigo-500 bg-indigo-50'
-                          : showExplanation && option === currentQuestion.correctAnswer
                             ? 'border-green-500 bg-green-50'
-                            : 'border-gray-300 hover:bg-gray-50'
+                            : showExplanation && option !== currentQuestion.correctAnswer && selectedOption === option
+                               ? 'border-red-500 bg-red-50'
+                               : 'border-indigo-500 bg-indigo-50'
+                           : showExplanation && option === currentQuestion.correctAnswer
+                             ? 'border-green-500 bg-green-50'
+                             : 'border-gray-300 hover:bg-gray-50'
                       } ${
                         showExplanation && option === currentQuestion.correctAnswer ? 'font-semibold' : ''
                       }`}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { db } from '../services/firebase';
 import { collection, getDocs, query, orderBy, limit, addDoc, Timestamp, doc, getDoc } from 'firebase/firestore';
 import { useAuth } from '../utils/hooks';
@@ -156,7 +156,7 @@ const StudyModePage = () => {
     }
   };
 
-  const handleSaveAttempt = async () => {
+  const handleSaveAttempt = useCallback(async () => {
     if (!user || !selectedQuiz) return;
     const timePerQuestion = 60;
     const totalTime = selectedQuiz.questions.length * timePerQuestion;
@@ -184,7 +184,7 @@ const StudyModePage = () => {
     } catch (err) {
       console.error("StudyModePage: Erro ao salvar a tentativa de quiz:", err);
     }
-  };
+  }, [user, selectedQuiz, answers, db, timeLeft]);
 
   // Função para reiniciar o quiz
   const handleRestartQuiz = () => {

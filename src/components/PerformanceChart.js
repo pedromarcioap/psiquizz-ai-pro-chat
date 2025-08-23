@@ -1,66 +1,109 @@
 import React from 'react';
-// Em um projeto real, usaríamos uma biblioteca de gráficos como Chart.js ou Recharts.
-// Por simplicidade, vamos simular o gráfico com divs.
+import { Line } from 'react-chartjs-2'; // Alterado de Bar para Line
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement, // Adicionado PointElement
+  LineElement, // Alterado de BarElement para LineElement
+  Title,
+  Tooltip,
+  Legend,
+} from 'chart.js';
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement, // Adicionado PointElement
+  LineElement, // Alterado de BarElement para LineElement
+  Title,
+  Tooltip,
+  Legend
+);
 
 const PerformanceChart = ({ attempts }) => {
   if (!attempts || attempts.length === 0) {
     return <p className="text-gray-500">Dados insuficientes para gerar o gráfico.</p>;
   }
 
-  const scores = attempts.map(a => {
+  // Ordenar as tentativas por data para o gráfico de evolução
+  const sortedAttempts = [...attempts].sort((a, b) => a.attemptedAt.getTime() - b.attemptedAt.getTime());
+
+  const labels = sortedAttempts.map(a => a.topic || `Tentativa ${a.attemptedAt?.toLocaleDateString('pt-BR') || ''}`);
+  const scores = sortedAttempts.map(a => {
     if (!a || !a.totalQuestions || a.totalQuestions === 0) return 0;
-    const percent = Math.round((a.score / a.totalQuestions) * 100);
+    const percent = (a.score / a.totalQuestions) * 100;
     return Math.min(Math.max(percent, 0), 100);
   });
-  const timeSpents = attempts.map(a => a.timeSpent || 0);
+  const timeSpents = sortedAttempts.map(a => a.timeSpent || 0);
 
-  // Encontrar o tempo máximo gasto para normalização
-  const maxTimeSpent = Math.max(...timeSpents);
+  const data = {
+    labels,
+    datasets: [
+      {
+        label: 'Pontuação (%)',
+        data: scores,
+        borderColor: 'rgb(79, 70, 229)', // indigo-600
+        backgroundColor: 'rgba(79, 70, 229, 0.5)',
+        yAxisID: 'y',
+        tension: 0.4, // Para suavizar a linha
+        fill: false,
+      },
+      {
+        label: 'Tempo Gasto (segundos)',
+        data: timeSpents,
+        borderColor: 'rgb(34, 197, 94)', // green-500
+        backgroundColor: 'rgba(34, 197, 94, 0.5)',
+        yAxisID: 'y1',
+        tension: 0.4, // Para suavizar a linha
+        fill: false,
+      },
+    ],
+  };
 
-  const formatTime = (seconds) => {
-    const minutes = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  const options = {
+    responsive: true,
+    interaction: {
+      mode: 'index',
+      intersect: false,
+    },
+    stacked: false,
+    plugins: {
+      title: {
+        display: true,
+        text: 'Evolução do Desempenho e Tempo Gasto',
+      },
+    },
+    scales: {
+      y: {
+        type: 'linear',
+        display: true,
+        position: 'left',
+        title: {
+          display: true,
+          text: 'Pontuação (%)',
+        },
+        min: 0,
+        max: 100,
+      },
+      y1: {
+        type: 'linear',
+        display: true,
+        position: 'right',
+        title: {
+          display: true,
+          text: 'Tempo Gasto (segundos)',
+        },
+        grid: {
+          drawOnChartArea: false,
+        },
+      },
+    },
   };
 
   return (
     <div className="bg-gray-50 p-4 rounded-lg">
-      <h4 className="font-semibold mb-2">Evolução do Desempenho</h4>
-      <div className="flex flex-col md:flex-row gap-4">
-        {/* Gráfico de Pontuação */}
-        <div className="flex-1">
-          <h5 className="text-md font-medium mb-2">Pontuação (%)</h5>
-          <div className="flex items-end h-40 border-b border-gray-300">
-            {scores.map((score, index) => (
-              <div key={`score-${index}`} className="flex-1 flex flex-col items-center justify-end">
-                <div
-                  className="w-8 bg-indigo-500 hover:bg-indigo-600"
-                  style={{ height: `${score}%` }}
-                  title={`Tentativa ${index + 1}: ${score}%`}
-                ></div>
-                <span className="text-xs mt-1">{index + 1}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Gráfico de Tempo Gasto */}
-        <div className="flex-1">
-          <h5 className="text-md font-medium mb-2">Tempo Gasto (s)</h5>
-          <div className="flex items-end h-40 border-b border-gray-300">
-            {timeSpents.map((time, index) => (
-              <div key={`time-${index}`} className="flex-1 flex flex-col items-center justify-end">
-                <div
-                  className="w-8 bg-green-500 hover:bg-green-600"
-                  style={{ height: `${(time / maxTimeSpent) * 100}%` }} // Normaliza para a altura do gráfico
-                  title={`Tentativa ${index + 1}: ${formatTime(time)}`}
-                ></div>
-                <span className="text-xs mt-1">{index + 1}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+      <Line options={options} data={data} />
     </div>
   );
 };
