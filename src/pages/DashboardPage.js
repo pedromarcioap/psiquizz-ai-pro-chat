@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../services/firebase';
-import { collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, limit, deleteDoc, doc } from 'firebase/firestore';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../utils/hooks';
 import { GoogleGenerativeAI } from '@google/generative-ai';
@@ -14,6 +14,8 @@ const DashboardPage = () => {
     quizzesTaken: 0,
     totalQuestions: 0,
   });
+  const [bestTopic, setBestTopic] = useState(null); // Novo estado para o melhor tópico
+  const [worstTopic, setWorstTopic] = useState(null); // Novo estado para o pior tópico
   const [recentAttempts, setRecentAttempts] = useState([]);
   const [allAttempts, setAllAttempts] = useState([]); // Novo estado para todas as tentativas
   const [generatedQuizzes, setGeneratedQuizzes] = useState([]); // Novo estado para quizzes gerados
@@ -55,6 +57,7 @@ const DashboardPage = () => {
           setInsights("Realize alguns quizzes para obter insights sobre seus estudos.");
         }
         
+-------
         setRecentAttempts(attemptsData.slice(0, 3));
         setAllAttempts(attemptsData); // Armazena todas as tentativas no estado
 
@@ -101,7 +104,9 @@ const DashboardPage = () => {
     
     **Instruções:**
     1.  **Análise:** Com base nos dados, identifique pontos fortes e áreas que precisam de melhoria. Se houver inconsistências (ex: média 0% com quizzes realizados), aponte o problema.
-    2.  **Plano de Estudos:** Forneça 2 a 3 ações práticas e específicas para o estudante melhorar seu desempenho.`;
+    2.  **Plano de Estudos:** Forneça 2 a 3 ações práticas e específicas para o estudante melhorar seu desempenho.
+    3.  **Melhor Tópico e Tópico a Melhorar:** Identifique o "Melhor Tópico" e o "Tópico a Melhorar" com base no desempenho. Retorne esses tópicos em um formato JSON no final da resposta, dentro de um bloco de código markdown. Se não houver dados suficientes para determinar o melhor/pior tópico, retorne `null` para eles.
+        A resposta deve ser formatada com a análise e o plano de estudos primeiro, seguido pelo bloco JSON.`;
 
     try {
       const genAI = new GoogleGenerativeAI(process.env.REACT_APP_GEMINI_API_KEY);
@@ -110,6 +115,7 @@ const DashboardPage = () => {
       const response = await result.response;
       setInsights(response.text());
     } catch (error) {
+-------
       console.error("Erro ao gerar insights:", error);
       setInsights("Não foi possível gerar insights no momento.");
     }
