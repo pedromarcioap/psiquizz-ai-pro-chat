@@ -124,16 +124,26 @@ const ChatPage = () => {
         timestamp: Timestamp.fromDate(userMessage.timestamp),
       });
 
-      const context = `Você é Izy, uma mentora de estudos inteligente e amigável...`;
-      const materialContext = selectedMaterial ? `\n\nContexto: ${selectedMaterial.content}` : '';
-      const finalPrompt = `${context}${materialContext}\n\nPergunta: ${messageText}`;
+      // Monta contexto para o backend
+      const contextMessages = [
+        { role: 'system', content: 'Você é Izy, uma mentora de estudos inteligente e amigável.' },
+        ...(selectedMaterial ? [{ role: 'system', content: `Contexto: ${selectedMaterial.content}` }] : []),
+        ...messages,
+        userMessage
+      ];
 
-      const genAI = new GoogleGenerativeAI(process.env.REACT_APP_GEMINI_API_KEY);
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
-      const result = await model.generateContent(finalPrompt);
-      const response = await result.response;
-      const aiText = response.text();
-
+      // Chamada ao backend para resposta otimizada
+      const token = await user.getIdToken();
+      const response = await fetch('http://localhost:4000/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ messages: contextMessages }),
+      });
+      const data = await response.json();
+      const aiText = data.reply || 'Não foi possível obter resposta.';
       const aiMessage = { role: 'assistant', content: aiText, timestamp: new Date() };
       setMessages(prev => [...prev, aiMessage]);
 

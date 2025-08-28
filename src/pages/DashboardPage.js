@@ -1,3 +1,24 @@
+// Função utilitária para exportar dados em CSV
+function exportToCSV(data, filename) {
+  if (!data || data.length === 0) return;
+  const keys = Object.keys(data[0]);
+  const csvRows = [keys.join(',')];
+  for (const row of data) {
+    csvRows.push(keys.map(k => JSON.stringify(row[k] ?? '')).join(','));
+  }
+  const csvContent = csvRows.join('\n');
+  const blob = new Blob([csvContent], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+// Mock de fallback IA local
+import { getLocalEmbedding } from '../utils/embeddings';
 import React, { useState, useEffect } from 'react';
 import { db } from '../services/firebase';
 import { collection, getDocs, query, orderBy, limit, deleteDoc, doc } from 'firebase/firestore';
@@ -5,6 +26,8 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../utils/hooks';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import PerformanceChart from '../components/PerformanceChart';
+import { getAllLocal, saveLocalFirst, flushToFirestore } from '../utils/storage';
+import { compress, decompress } from 'lz-string';
 import TopicAnalysis from '../components/TopicAnalysis';
 
 const DashboardPage = () => {
@@ -22,20 +45,49 @@ const DashboardPage = () => {
   const [loading, setLoading] = useState(true);
   const [insights, setInsights] = useState('');
 
+  const PAGE_SIZE = 5; // Configuração de paginação
   useEffect(() => {
     if (authLoading) return;
     if (!user) {
       setLoading(false);
+  const [currentAttemptPage, setCurrentAttemptPage] = useState(0);
+  const [currentQuizPage, setCurrentQuizPage] = useState(0);
       return;
     }
 
     const loadDashboardData = async () => {
       setLoading(true);
       try {
-        // Buscar tentativas de quiz
-        const attemptsQuery = query(collection(db, 'users', user.uid, 'quizAttempts'), orderBy('attemptedAt', 'desc'));
-        const attemptsSnapshot = await getDocs(attemptsQuery);
-        const attemptsData = attemptsSnapshot.docs.map(doc => ({ ...doc.data(), attemptedAt: doc.data().attemptedAt.toDate() }));
+        // Tenta carregar tentativas e quizzes do cache local
+        let attemptsData = await getAllLocal('quizzes');
+        setCurrentAttemptPage(0);
+        setCurrentQuizPage(0);
+        let generatedQuizzesData = await getAllLocal('generatedQuizzes');
+        // Descomprime dados se necessário
+        if (attemptsData && attemptsData.length > 0 && typeof attemptsData[0] === 'string') {
+          attemptsData = attemptsData.map(item => JSON.parse(decompress(item)));
+        }
+        if (generatedQuizzesData && generatedQuizzesData.length > 0 && typeof generatedQuizzesData[0] === 'string') {
+          generatedQuizzesData = generatedQuizzesData.map(item => JSON.parse(decompress(item)));
+        }
+
+        // Se não houver dados locais, busca do Firestore e salva no cache
+        if (!attemptsData || attemptsData.length === 0) {
+          const attemptsQuery = query(collection(db, 'users', user.uid, 'quizAttempts'), orderBy('attemptedAt', 'desc'));
+          const attemptsSnapshot = await getDocs(attemptsQuery);
+          attemptsData = attemptsSnapshot.docs.map(doc => ({ ...doc.data(), attemptedAt: doc.data().attemptedAt.toDate() }));
+          for (const attempt of attemptsData) await saveLocalFirst('quizzes', compress(JSON.stringify(attempt)));
+        }
+        if (!generatedQuizzesData || generatedQuizzesData.length === 0) {
+          const generatedQuizzesQuery = query(collection(db, 'users', user.uid, 'quizzes'), orderBy('createdAt', 'desc'), limit(5));
+          const generatedQuizzesSnapshot = await getDocs(generatedQuizzesQuery);
+          generatedQuizzesData = generatedQuizzesSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+            createdAt: doc.data().createdAt?.toDate()
+          }));
+          for (const quiz of generatedQuizzesData) await saveLocalFirst('generatedQuizzes', compress(JSON.stringify(quiz)));
+        }
 
         if (attemptsData.length > 0) {
           const totalScore = attemptsData.reduce((acc, attempt) => {
@@ -57,17 +109,8 @@ const DashboardPage = () => {
           setInsights("Realize alguns quizzes para obter insights sobre seus estudos.");
         }
         setRecentAttempts(attemptsData.slice(0, 3));
-        setAllAttempts(attemptsData); // Armazena todas as tentativas no estado
-
-        // Buscar quizzes gerados (não realizados)
-        const generatedQuizzesQuery = query(collection(db, 'users', user.uid, 'quizzes'), orderBy('createdAt', 'desc'), limit(5));
-        const generatedQuizzesSnapshot = await getDocs(generatedQuizzesQuery);
-        const generatedQuizzesData = generatedQuizzesSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-          createdAt: doc.data().createdAt?.toDate()
-        }));
-        setGeneratedQuizzes(generatedQuizzesData); // Atualiza o estado com os quizzes gerados
+        setAllAttempts(attemptsData);
+        setGeneratedQuizzes(generatedQuizzesData);
       } catch (err) {
         console.error('Erro ao carregar dados do dashboard:', err);
       } finally {
@@ -85,24 +128,27 @@ const DashboardPage = () => {
       return;
     }
 
-    const topicPerformance = attempts.map(a => ({
-      topic: a.topic,
-      score: Math.round((a.score / a.totalQuestions) * 100)
-    }));
-
-    const averageTime = attempts.reduce((acc, a) => acc + (a.timeSpent || 0), 0) / attempts.length;
-
-    const prompt = `Análise os seguintes dados de desempenho de um estudante em quizzes e forneça uma análise e um plano de estudos conciso.
-  **Dados:**
-  - **Média Geral de Acertos:** ${currentStats.averageScore}%
-  - **Quizzes Realizados:** ${currentStats.quizzesTaken}
-  - **Desempenho por Tópico (pontuação %):** ${JSON.stringify(topicPerformance)}
-  - **Tempo Médio Gasto por Quiz:** ${averageTime.toFixed(2)} segundos.
-  
-  **Instruções:**
-  1. **Análise:** Com base nos dados, identifique pontos fortes e áreas que precisam de melhoria. Se houver inconsistências (ex: média 0% com quizzes realizados), aponte o problema.
-  2. **Plano de Estudos:** Forneça 2 a 3 ações práticas e específicas para o estudante melhorar seu desempenho.
-  3. **Melhor Tópico e Tópico a Melhorar:** Identifique o "Melhor Tópico" e o "Tópico a Melhorar" com base no desempenho. Retorne esses tópicos em um formato JSON no final da resposta, dentro de um bloco de código markdown. Se não houver dados suficientes para determinar o melhor/pior tópico, retorne null para eles. A resposta deve ser formatada com a análise e o plano de estudos primeiro, seguido pelo bloco JSON.`;
+    // Chamada ao backend para insights otimizados
+    try {
+      // Obtém token do Firebase Auth
+      const token = await user.getIdToken();
+      const response = await fetch('http://localhost:4000/api/insights', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ attempts, stats: currentStats }),
+      });
+      const data = await response.json();
+      if (data.insight) {
+        setInsights(`${data.insight}\n\nFonte: ${data.source === 'cache' ? 'Cache' : 'Gemini'}`);
+      } else {
+        setInsights("Não foi possível gerar insights automáticos. Tente novamente mais tarde.");
+      }
+    } catch (err) {
+      setInsights("Erro ao conectar ao backend de insights.");
+    }
 
     try {
       const genAI = new GoogleGenerativeAI(process.env.REACT_APP_GEMINI_API_KEY);
@@ -126,6 +172,16 @@ const DashboardPage = () => {
   return (
     <div className="max-w-4xl mx-auto py-8 px-4">
       <h1 className="text-3xl font-bold text-gray-900 mb-6">Dashboard</h1>
+      <div className="flex gap-4 mb-6">
+        <button
+          className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+          onClick={() => exportToCSV(allAttempts, 'tentativas_quiz.csv')}
+        >Exportar Tentativas (CSV)</button>
+        <button
+          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          onClick={() => exportToCSV(generatedQuizzes, 'quizzes_gerados.csv')}
+        >Exportar Quizzes (CSV)</button>
+      </div>
       
       {/* Resumo de Performance */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">

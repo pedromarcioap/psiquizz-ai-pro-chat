@@ -33,6 +33,25 @@ const QuizGeneratorPage = () => {
   const [isTimerActive, setIsTimerActive] = useState(false);
   const [quizStarted, setQuizStarted] = useState(false); // Novo estado para controlar o início do quiz
 
+  // Função para iniciar o quiz
+  const startQuiz = (quizData) => {
+    setGeneratedQuiz(quizData);
+    setCurrentQuestionIndex(0);
+    setSelectedOption(null);
+    setShowExplanation(false);
+    setScore(0);
+    setAnswers([]);
+    if (quizMode === 'prova') {
+      const timePerQuestion = 60;
+      setTimeLeft(quizData.questions.length * timePerQuestion);
+      setIsTimerActive(true);
+    } else {
+      setTimeLeft(null);
+      setIsTimerActive(false);
+    }
+    setQuizStarted(true);
+  };
+
   // Carregar materiais da biblioteca e/ou quiz da URL
   useEffect(() => {
     if (!user) return;
@@ -128,110 +147,51 @@ const QuizGeneratorPage = () => {
     setIsTimerActive(false);
 
     try {
-      // Construir o prompt para a IA
-      let prompt = `Gere um quiz educacional com as seguintes especificações:
-      Tópico: ${quizConfig.topic}
-      Subtópicos: ${quizConfig.subtopics}
-      Dificuldade: ${quizConfig.difficulty}
-      Número de questões: ${quizConfig.numQuestions}
-      Número de opções por questão: ${quizConfig.numOptions}
-      
-      Forneça a resposta no formato JSON com a seguinte estrutura:
-      {
-        "questions": [
-          {
-            "question": "Texto da pergunta",
-            "options": ["Opção 1", "Opção 2", "Opção 3", "Opção 4"],
-            "correctAnswer": "Opção correta",
-            "explanation": "Explicação didática da resposta"
-          }
-        ]
-      }`;
-
-      // Se um material foi selecionado, incluir seu conteúdo no prompt
-      if (selectedMaterial) {
-        const material = materials.find(m => m.id === selectedMaterial);
-        if (material) {
-          prompt += `\n\nConteúdo do material para basear o quiz:\n${material.content.substring(0, 1000)}...`;
-        }
-      }
-
-      // Chamar a API Gemini
-      const genAI = new GoogleGenerativeAI(process.env.REACT_APP_GEMINI_API_KEY);
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" }); // Usar modelo mais recente
-      
-      // Adicionar tratamento de erro mais detalhado
-      let text;
+      // Monta preferências para o backend
+      const preferences = {
+        ...quizConfig,
+        material: selectedMaterial ? materials.find(m => m.id === selectedMaterial)?.content : undefined
+      };
+      // Chamada ao backend para quiz otimizado
+      console.log("Tentando obter token do usuário...");
+      const token = await user.getIdToken();
+      console.log("Token obtido:", token ? "Token presente" : "Token ausente");
+      console.log("Preferências enviadas:", preferences);
+  const response = await fetch('https://reimagined-journey-p74p4vr7g75279w7-4000.app.github.dev/api/quiz', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ preferences }),
+      });
+      console.log("Resposta do backend:", response);
+      const data = await response.json();
+      let quizObj = null;
       try {
-        alert("QuizGeneratorPage: Chamando API Gemini..."); // Alerta antes da chamada
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        text = response.text();
-        console.log("QuizGeneratorPage: Resposta bruta da API Gemini:", text); // Log da resposta bruta
-        alert("QuizGeneratorPage: Resposta da API Gemini recebida."); // Alerta após a resposta
-        
-        // Verificar se a resposta é válida
-        if (!text || text.trim() === '') {
-          throw new Error('Resposta vazia da API Gemini');
-        }
-      } catch (apiError) {
-        console.error('Erro específico da API Gemini:', apiError);
-        alert(`QuizGeneratorPage: Erro na API Gemini: ${apiError.message}`); // Alerta de erro
-        throw new Error(`Falha na comunicação com a API Gemini: ${apiError.message}`);
+        quizObj = typeof data.quiz === 'string' ? JSON.parse(data.quiz) : data.quiz;
+      } catch (err) {
+        setError('Erro ao interpretar resposta do backend. Tente novamente.');
+        setLoading(false);
+        return;
       }
-      
-      // Tentar parsear o JSON da resposta
-      let quizData;
-      try {
-        // Remover possíveis delimitadores de código
-        const jsonStart = text.indexOf('{');
-        const jsonEnd = text.lastIndexOf('}') + 1;
-        const jsonString = text.substring(jsonStart, jsonEnd);
-        quizData = JSON.parse(jsonString);
-        console.log("QuizGeneratorPage: QuizData parseado:", quizData); // Log do quizData
-        alert("QuizGeneratorPage: JSON parseado com sucesso."); // Alerta de sucesso no parse
-      } catch (parseError) {
-        console.error("QuizGeneratorPage: Erro ao parsear JSON:", parseError); // Log do erro de parse
-        alert(`QuizGeneratorPage: Erro ao parsear JSON: ${parseError.message}`); // Alerta de erro no parse
-        throw new Error('Falha ao parsear o JSON da resposta da IA');
+      setGeneratedQuiz(quizObj);
+      setAnswers([]);
+      if (quizMode === 'prova') {
+        const timePerQuestion = 60; // 60 segundos por questão
+        setTimeLeft(quizObj.questions.length * timePerQuestion);
+        setIsTimerActive(true);
+      } else {
+        setTimeLeft(null);
+        setIsTimerActive(false);
       }
-
-      // Garantir que quizData tenha a propriedade questions
-      const quizDataWithQuestions = { questions: [], ...quizData };
-      setGeneratedQuiz(quizDataWithQuestions);
+      setQuizStarted(true);
       setLoading(false);
     } catch (err) {
       setError('Erro ao gerar quiz: ' + err.message);
       setLoading(false);
     }
-  };
-
-  // Função para iniciar o modo de estudo (agora dentro do QuizGeneratorPage)
-  const startQuiz = (quizToStart = generatedQuiz) => {
-    console.log("startQuiz chamado. quizToStart:", quizToStart);
-    console.log("quizToStart.questions:", quizToStart?.questions);
-    // Garantir que quizToStart tenha a propriedade questions
-    const quizToStartWithQuestions = { questions: [], ...quizToStart };
-    if (!quizToStartWithQuestions || !Array.isArray(quizToStartWithQuestions.questions) || quizToStartWithQuestions.questions.length === 0) {
-      console.error("Não foi possível iniciar o quiz: O objeto do quiz ou suas questões são inválidos ou vazios.", quizToStartWithQuestions);
-      setError("Não foi possível iniciar o quiz. Por favor, gere um novo quiz ou verifique o quiz carregado.");
-      return;
-    }
-    setCurrentQuestionIndex(0);
-    setSelectedOption(null);
-    setShowExplanation(false);
-    setScore(0);
-    setAnswers([]);
-    if (quizMode === 'prova') {
-      const timePerQuestion = 60; // 60 segundos por questão
-      setTimeLeft(quizToStartWithQuestions.questions.length * timePerQuestion);
-      setIsTimerActive(true);
-    } else {
-      setTimeLeft(null);
-      setIsTimerActive(false);
-    }
-    setQuizStarted(true);
-  };
+  }
 
   // Função para lidar com a seleção de uma opção
   const handleOptionSelect = (option) => {

@@ -14,6 +14,9 @@ import Footer from './components/Footer';
 function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  // Orquestração de IA
+  const [aiMode, setAiMode] = useState('flash'); // 'offline' | 'flash' | 'pro'
+  const [useWebSearch, setUseWebSearch] = useState(false);
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((user) => {
@@ -33,13 +36,24 @@ function App() {
       <div className="min-h-screen bg-gray-50 flex flex-col">
         {user && <Navbar />}
         <main className="flex-grow">
+          {/* Header de modo IA e toggle web search */}
+          <div className="flex items-center justify-end gap-4 p-2">
+            <select value={aiMode} onChange={e => setAiMode(e.target.value)} className="border rounded px-2 py-1">
+              <option value="offline">Offline</option>
+              <option value="flash">Gemini Flash</option>
+              <option value="pro">Gemini Pro</option>
+            </select>
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={useWebSearch} onChange={e => setUseWebSearch(e.target.checked)} />
+              Pesquisar na Web
+            </label>
+          </div>
           <Routes>
             <Route path="/auth" element={<AuthPage />} />
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/library" element={<LibraryPage />} />
-            <Route path="/chat" element={<ChatPage />} />
+            <Route path="/chat" element={<ChatPage aiMode={aiMode} useWebSearch={useWebSearch} />} />
             <Route path="/quiz-generator" element={<QuizGeneratorPage />} />
-            {/* A rota /study-mode não é mais necessária como uma página separada */}
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/dashboard" />} />
           </Routes>
