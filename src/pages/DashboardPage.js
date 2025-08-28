@@ -56,8 +56,6 @@ const DashboardPage = () => {
         } else {
           setInsights("Realize alguns quizzes para obter insights sobre seus estudos.");
         }
-        
--------
         setRecentAttempts(attemptsData.slice(0, 3));
         setAllAttempts(attemptsData); // Armazena todas as tentativas no estado
 
@@ -70,7 +68,6 @@ const DashboardPage = () => {
           createdAt: doc.data().createdAt?.toDate()
         }));
         setGeneratedQuizzes(generatedQuizzesData); // Atualiza o estado com os quizzes gerados
-
       } catch (err) {
         console.error('Erro ao carregar dados do dashboard:', err);
       } finally {
@@ -80,6 +77,7 @@ const DashboardPage = () => {
 
     loadDashboardData();
   }, [user, authLoading]);
+
 
   const getStudyInsights = async (attempts, currentStats) => {
     if (attempts.length < 3) {
@@ -91,22 +89,20 @@ const DashboardPage = () => {
       topic: a.topic,
       score: Math.round((a.score / a.totalQuestions) * 100)
     }));
-    
+
     const averageTime = attempts.reduce((acc, a) => acc + (a.timeSpent || 0), 0) / attempts.length;
 
-    const prompt = `
-    Análise os seguintes dados de desempenho de um estudante em quizzes e forneça uma análise e um plano de estudos conciso.
-    **Dados:**
-    - **Média Geral de Acertos:** ${currentStats.averageScore}%
-    - **Quizzes Realizados:** ${currentStats.quizzesTaken}
-    - **Desempenho por Tópico (pontuação %):** ${JSON.stringify(topicPerformance)}
-    - **Tempo Médio Gasto por Quiz:** ${averageTime.toFixed(2)} segundos.
-    
-    **Instruções:**
-    1.  **Análise:** Com base nos dados, identifique pontos fortes e áreas que precisam de melhoria. Se houver inconsistências (ex: média 0% com quizzes realizados), aponte o problema.
-    2.  **Plano de Estudos:** Forneça 2 a 3 ações práticas e específicas para o estudante melhorar seu desempenho.
-    3.  **Melhor Tópico e Tópico a Melhorar:** Identifique o "Melhor Tópico" e o "Tópico a Melhorar" com base no desempenho. Retorne esses tópicos em um formato JSON no final da resposta, dentro de um bloco de código markdown. Se não houver dados suficientes para determinar o melhor/pior tópico, retorne `null` para eles.
-        A resposta deve ser formatada com a análise e o plano de estudos primeiro, seguido pelo bloco JSON.`;
+    const prompt = `Análise os seguintes dados de desempenho de um estudante em quizzes e forneça uma análise e um plano de estudos conciso.
+  **Dados:**
+  - **Média Geral de Acertos:** ${currentStats.averageScore}%
+  - **Quizzes Realizados:** ${currentStats.quizzesTaken}
+  - **Desempenho por Tópico (pontuação %):** ${JSON.stringify(topicPerformance)}
+  - **Tempo Médio Gasto por Quiz:** ${averageTime.toFixed(2)} segundos.
+  
+  **Instruções:**
+  1. **Análise:** Com base nos dados, identifique pontos fortes e áreas que precisam de melhoria. Se houver inconsistências (ex: média 0% com quizzes realizados), aponte o problema.
+  2. **Plano de Estudos:** Forneça 2 a 3 ações práticas e específicas para o estudante melhorar seu desempenho.
+  3. **Melhor Tópico e Tópico a Melhorar:** Identifique o "Melhor Tópico" e o "Tópico a Melhorar" com base no desempenho. Retorne esses tópicos em um formato JSON no final da resposta, dentro de um bloco de código markdown. Se não houver dados suficientes para determinar o melhor/pior tópico, retorne null para eles. A resposta deve ser formatada com a análise e o plano de estudos primeiro, seguido pelo bloco JSON.`;
 
     try {
       const genAI = new GoogleGenerativeAI(process.env.REACT_APP_GEMINI_API_KEY);
@@ -115,9 +111,7 @@ const DashboardPage = () => {
       const response = await result.response;
       setInsights(response.text());
     } catch (error) {
--------
-      console.error("Erro ao gerar insights:", error);
-      setInsights("Não foi possível gerar insights no momento.");
+      console.error('Erro ao gerar insights:', error);
     }
   };
 
@@ -223,8 +217,9 @@ const DashboardPage = () => {
                     Criado em: {quiz.createdAt?.toLocaleDateString('pt-BR')}
                   </p>
                 </div>
+                {/* Link para o modo de estudo */}
                 <Link
-                  to={`/study-mode?quizId=${quiz.id}`} // Link para o modo de estudo
+                  to={`/study-mode?quizId=${quiz.id}`}
                   className="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
                 >
                   Estudar
