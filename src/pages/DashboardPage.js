@@ -20,11 +20,9 @@ function exportToCSV(data, filename) {
 // Mock de fallback IA local
 import { getLocalEmbedding } from '../utils/embeddings';
 import React, { useState, useEffect } from 'react';
-import { db } from '../services/firebase';
-import { collection, getDocs, query, orderBy, limit, deleteDoc, doc } from 'firebase/firestore';
+import { supabase } from '../services/supabaseClient';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../utils/hooks';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import PerformanceChart from '../components/PerformanceChart';
 import { getAllLocal, saveLocalFirst, flushToFirestore } from '../utils/storage';
 import { compress, decompress } from 'lz-string';
@@ -50,36 +48,30 @@ const DashboardPage = () => {
     if (authLoading) return;
     if (!user) {
       setLoading(false);
-  const [currentAttemptPage, setCurrentAttemptPage] = useState(0);
-  const [currentQuizPage, setCurrentQuizPage] = useState(0);
       return;
     }
 
     const loadDashboardData = async () => {
       setLoading(true);
       try {
-        // Tenta carregar tentativas e quizzes do cache local
-        let attemptsData = await getAllLocal('quizzes');
-        setCurrentAttemptPage(0);
-        setCurrentQuizPage(0);
-        let generatedQuizzesData = await getAllLocal('generatedQuizzes');
-        // Descomprime dados se necessário
-        if (attemptsData && attemptsData.length > 0 && typeof attemptsData[0] === 'string') {
-          attemptsData = attemptsData.map(item => JSON.parse(decompress(item)));
-        }
-        if (generatedQuizzesData && generatedQuizzesData.length > 0 && typeof generatedQuizzesData[0] === 'string') {
-          generatedQuizzesData = generatedQuizzesData.map(item => JSON.parse(decompress(item)));
-        }
+        // Carregar tentativas do Supabase
+        const { data: attemptsData, error: attemptsError } = await supabase
+          .from('quiz_history')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('criado_em', { ascending: false });
+        if (attemptsError) throw attemptsError;
 
-        // Se não houver dados locais, busca do Firestore e salva no cache
-        if (!attemptsData || attemptsData.length === 0) {
-          const attemptsQuery = query(collection(db, 'users', user.uid, 'quizAttempts'), orderBy('attemptedAt', 'desc'));
-          const attemptsSnapshot = await getDocs(attemptsQuery);
-          attemptsData = attemptsSnapshot.docs.map(doc => ({ ...doc.data(), attemptedAt: doc.data().attemptedAt.toDate() }));
-          for (const attempt of attemptsData) await saveLocalFirst('quizzes', compress(JSON.stringify(attempt)));
-        }
-        if (!generatedQuizzesData || generatedQuizzesData.length === 0) {
-          const generatedQuizzesQuery = query(collection(db, 'users', user.uid, 'quizzes'), orderBy('createdAt', 'desc'), limit(5));
+        // Calcula estatísticas
+        let totalQuestions = 0;
+        let totalScore = 0;
+        (attemptsData || []).forEach(attempt => {
+          totalQuestions += attempt.perguntas?.length || 0;
+          totalScore += attempt.pontuação || 0;
+        });
+        const averageScore = (attemptsData && attemptsData.length > 0)
+          ? Math.round((totalScore / (attemptsData.length || 1)) * 100) / 100
+          : 0;
           const generatedQuizzesSnapshot = await getDocs(generatedQuizzesQuery);
           generatedQuizzesData = generatedQuizzesSnapshot.docs.map(doc => ({
             id: doc.id,

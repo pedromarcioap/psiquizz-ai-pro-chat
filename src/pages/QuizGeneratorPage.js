@@ -255,25 +255,6 @@ const QuizGeneratorPage = () => {
     const attemptData = {
       quizId: generatedQuiz.id || `generated-${Timestamp.now().toMillis()}`, // Gerar um ID se não houver
       topic: quizConfig.topic,
-      difficulty: quizConfig.difficulty,
-      score: finalScore, // Usar o score recalculado
-      totalQuestions: generatedQuiz.questions.length,
-      attemptedAt: Timestamp.now(),
-      timeSpent,
-      answers,
-    };
-
-    try {
-      await addDoc(collection(db, 'users', user.uid, 'quizAttempts'), attemptData);
-      alert('Tentativa de quiz salva com sucesso!');
-    } catch (err) {
-      setError('Erro ao salvar a tentativa de quiz: ' + err.message);
-    }
-  };
-
-  // Função para reiniciar o quiz
-  const handleRestartQuiz = () => {
-    setCurrentQuestionIndex(0);
     setSelectedOption(null);
     setShowExplanation(false);
     setScore(0);

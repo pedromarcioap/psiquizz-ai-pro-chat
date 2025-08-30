@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { auth, googleProvider } from '../services/firebase';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup } from 'firebase/auth';
+import { supabase } from '../services/supabaseClient';
 
 const AuthPage = () => {
   const [isLogin, setIsLogin] = useState(true);

@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../services/firebase';
-import { collection, addDoc, getDocs, deleteDoc, doc } from 'firebase/firestore';
+import { supabase } from '../services/supabaseClient';
 import { useAuth } from '../utils/hooks';
 import * as pdfjsLib from 'pdfjs-dist/build/pdf';
 import mammoth from 'mammoth';
@@ -23,17 +22,17 @@ const LibraryPage = () => {
     if (!user) return;
     const loadMaterials = async () => {
       try {
-        const querySnapshot = await getDocs(collection(db, 'users', user.uid, 'library'));
-        const materialsData = querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        setMaterials(materialsData);
+        const { data, error } = await supabase
+          .from('library')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('criado_em', { ascending: false });
+        if (error) throw error;
+        setMaterials(data || []);
       } catch (err) {
         console.error('Erro ao carregar materiais:', err);
       }
     };
-
     loadMaterials();
   }, [user]);
 
@@ -111,20 +110,23 @@ const LibraryPage = () => {
     }
 
     try {
-      await addDoc(collection(db, 'users', user.uid, 'library'), {
-        name: fileName,
-        content: fileContent,
-        createdAt: new Date()
-      });
-
+      const { error } = await supabase.from('library').insert([
+        {
+          user_id: user.id,
+          nome_arquivo: fileName,
+          texto_extraído: fileContent,
+          criado_em: new Date().toISOString()
+        }
+      ]);
+      if (error) throw error;
       // Atualizar a lista de materiais
-      const querySnapshot = await getDocs(collection(db, 'users', user.uid, 'library'));
-      const materialsData = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setMaterials(materialsData);
-
+      const { data, error: fetchError } = await supabase
+        .from('library')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('criado_em', { ascending: false });
+      if (fetchError) throw fetchError;
+      setMaterials(data || []);
       // Limpar os campos
       setFile(null);
       setFileName('');
@@ -139,10 +141,16 @@ const LibraryPage = () => {
   const handleRemoveMaterial = async (id) => {
     if (!user) return;
     try {
-      await deleteDoc(doc(db, 'users', user.uid, 'library', id));
-      
+      const { error } = await supabase.from('library').delete().eq('id', id);
+      if (error) throw error;
       // Atualizar a lista de materiais
-      setMaterials(materials.filter(material => material.id !== id));
+      const { data, error: fetchError } = await supabase
+        .from('library')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('criado_em', { ascending: false });
+      if (fetchError) throw fetchError;
+      setMaterials(data || []);
     } catch (err) {
       setError('Erro ao remover material: ' + err.message);
     }

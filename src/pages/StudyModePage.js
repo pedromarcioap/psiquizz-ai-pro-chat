@@ -35,10 +35,14 @@ const StudyModePage = () => {
 
       if (quizIdFromUrl) {
         try {
-          const quizDocRef = doc(db, 'users', user.uid, 'quizzes', quizIdFromUrl);
-          const quizDocSnap = await getDoc(quizDocRef);
-          if (quizDocSnap.exists()) {
-            const quizData = { id: quizDocSnap.id, ...quizDocSnap.data(), createdAt: quizDocSnap.data().createdAt?.toDate() };
+          const { data, error } = await supabase
+            .from('quizzes')
+            .select('*')
+            .eq('id', quizIdFromUrl)
+            .single();
+          if (error) throw error;
+          if (data) {
+            const quizData = { id: data.id, ...data };
             startStudyMode(quizData);
           } else {
             console.warn("StudyModePage: Quiz não encontrado na URL:", quizIdFromUrl);
@@ -56,14 +60,11 @@ const StudyModePage = () => {
 
     const loadQuizzesList = async () => {
       try {
-        const q = query(collection(db, 'users', user.uid, 'quizzes'), orderBy('createdAt', 'desc'), limit(10));
-        const querySnapshot = await getDocs(q);
-        const quizzesData = querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-          createdAt: doc.data().createdAt?.toDate()
-        }));
-        setQuizzes(quizzesData);
+        const { data, error } = await supabase
+          .from('quizzes')
+          .select('*');
+        if (error) throw error;
+        setQuizzes(data);
       } catch (err) {
         console.error('StudyModePage: Erro ao carregar quizzes:', err);
       }
@@ -165,12 +166,12 @@ const StudyModePage = () => {
     const finalScore = answers.filter(answer => answer.isCorrect).length; // Recalcular score com base nas respostas
 
     const attemptData = {
-      quizId: selectedQuiz.id,
-      topic: selectedQuiz.topic,
+      user_id: user.id,
+      quiz_id: selectedQuiz.id,
       score: finalScore, // Usar o score recalculado
-      totalQuestions: selectedQuiz.questions.length,
-      attemptedAt: Timestamp.now(),
-      timeSpent,
+      total_questions: selectedQuiz.questions.length,
+      attempted_at: new Date().toISOString(),
+      time_spent,
       answers,
     };
 
@@ -179,7 +180,12 @@ const StudyModePage = () => {
     console.log("StudyModePage: Attempt Data:", attemptData);
 
     try {
-      await addDoc(collection(db, 'users', user.uid, 'quizAttempts'), attemptData);
+      const { error } = await supabase
+        .from('quiz_attempts')
+        .upsert([
+          attemptData
+        ], { onConflict: ['user_id', 'quiz_id'] });
+      if (error) throw error;
       console.log("StudyModePage: Quiz attempt saved successfully!");
     } catch (err) {
       console.error("StudyModePage: Erro ao salvar a tentativa de quiz:", err);

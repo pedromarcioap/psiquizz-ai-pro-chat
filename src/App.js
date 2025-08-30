@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { auth } from './services/firebase';
+import { supabase } from './services/supabaseClient';
 import AuthPage from './pages/AuthPage';
 import LibraryPage from './pages/LibraryPage';
 import ChatPage from './pages/ChatPage';
