@@ -14,6 +14,7 @@ import ApiConfigModal from './components/ApiConfigModal';
 
 function App() {
   const [user, setUser] = useState(null);
+  console.log('User state in App.js:', user);
   const [loading, setLoading] = useState(true);
   // Orquestração de IA
   const getStoredConfig = () => {

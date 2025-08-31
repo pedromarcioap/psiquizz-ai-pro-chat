@@ -139,7 +139,7 @@ const QuizGeneratorPage = () => {
     e.preventDefault();
     setLoading(true);
     setError('');
-    setGeneratedQuiz(null); // Resetar quiz gerado
+    setGeneratedQuiz({ questions: [] }); // Resetar quiz gerado
     setQuizStarted(false); // Resetar estado de quiz iniciado
     setCurrentQuestionIndex(0);
     setSelectedOption(null);
@@ -165,8 +165,10 @@ const QuizGeneratorPage = () => {
       // Supabase client automatically handles sending the session token in the Authorization header
       console.log("Preferências enviadas:", preferences);
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        setError('Sessão de usuário não encontrada. Por favor, faça login novamente.');
+      console.log("Session object:", session);
+      console.log("Access token:", session?.access_token);
+      if (!session || !session.access_token) {
+        setError('Sessão de usuário não encontrada ou token ausente. Por favor, faça login novamente.');
         setLoading(false);
         return;
       }
