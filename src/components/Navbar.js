@@ -7,7 +7,7 @@ const Navbar = () => {
 
   const handleLogout = async () => {
     try {
-      await auth.signOut();
+      await supabase.auth.signOut();
       navigate('/auth');
     } catch (error) {
       console.error('Erro ao sair:', error);

@@ -4,7 +4,7 @@ import { useAuth } from '../utils/hooks';
 import ReactMarkdown from 'react-markdown';
 import ChatHistorySidebar from '../components/ChatHistorySidebar';
 
-const ChatPage = () => {
+const ChatPage = ({ selectedApiProvider, openRouterConfig, huggingFaceConfig, useWebSearch }) => {
   const { user } = useAuth();
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -174,7 +174,13 @@ const ChatPage = () => {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
-        body: JSON.stringify({ messages: contextMessages }),
+        body: JSON.stringify({
+          messages: contextMessages,
+          selectedApiProvider,
+          openRouterConfig,
+          huggingFaceConfig,
+          useWebSearch,
+        }),
       });
       const data = await response.json();
       const aiText = data.reply || 'Não foi possível obter resposta.';

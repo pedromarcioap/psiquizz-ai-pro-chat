@@ -13,20 +13,27 @@ const AuthPage = () => {
 
     try {
       if (isLogin) {
-        await signInWithEmailAndPassword(auth, email, password);
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
       } else {
-        await createUserWithEmailAndPassword(auth, email, password);
+        const { error } = await supabase.auth.signUp({ email, password });
+        if (error) throw error;
       }
+      navigate('/dashboard'); // Redirect on success
     } catch (err) {
-      setError(err.message);
+      console.error("Auth error:", err); // Log full error for debugging
+      setError(err.message || 'Ocorreu um erro desconhecido.'); // Use err.message or a generic message
     }
   };
 
   const handleGoogleSignIn = async () => {
     try {
-      await signInWithPopup(auth, googleProvider);
+      const { error } = await supabase.auth.signInWithOAuth({ provider: 'google' });
+      if (error) throw error;
+      navigate('/dashboard'); // Redirect on success
     } catch (err) {
-      setError(err.message);
+      console.error("Auth error (Google):", err); // Log full error for debugging
+      setError(err.message || 'Ocorreu um erro desconhecido ao entrar com o Google.'); // Use err.message or a generic message
     }
   };
 

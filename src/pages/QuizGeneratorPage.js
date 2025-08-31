@@ -149,6 +149,12 @@ const QuizGeneratorPage = () => {
     setTimeLeft(null);
     setIsTimerActive(false);
 
+    if (!user) {
+      setError('Você precisa estar logado para gerar um quiz.');
+      setLoading(false);
+      return;
+    }
+
     try {
       // Monta preferências para o backend
       const preferences = {
@@ -156,15 +162,19 @@ const QuizGeneratorPage = () => {
         material: selectedMaterial ? materials.find(m => m.id === selectedMaterial)?.content : undefined
       };
       // Chamada ao backend para quiz otimizado
-      console.log("Tentando obter token do usuário...");
-      const token = await user.getIdToken();
-      console.log("Token obtido:", token ? "Token presente" : "Token ausente");
+      // Supabase client automatically handles sending the session token in the Authorization header
       console.log("Preferências enviadas:", preferences);
-  const response = await fetch('https://reimagined-journey-p74p4vr7g75279w7-4000.app.github.dev/api/quiz', {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        setError('Sessão de usuário não encontrada. Por favor, faça login novamente.');
+        setLoading(false);
+        return;
+      }
+  const response = await fetch('http://localhost:4000/api/quiz', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({ preferences }),
       });

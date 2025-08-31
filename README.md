@@ -53,12 +53,8 @@ src/
 3. Configure as variáveis de ambiente:
    Crie um arquivo `.env` na raiz do projeto com as seguintes variáveis (veja `.env.example` para um exemplo):
    ```
-   REACT_APP_FIREBASE_API_KEY=sua_api_key
-   REACT_APP_FIREBASE_AUTH_DOMAIN=seu_auth_domain
-   REACT_APP_FIREBASE_PROJECT_ID=seu_project_id
-   REACT_APP_FIREBASE_STORAGE_BUCKET=seu_storage_bucket
-   REACT_APP_FIREBASE_MESSAGING_SENDER_ID=seu_messaging_sender_id
-   REACT_APP_FIREBASE_APP_ID=sua_app_id
+   REACT_APP_SUPABASE_URL=sua_supabase_url
+   REACT_APP_SUPABASE_ANON_KEY=sua_supabase_anon_key
    REACT_APP_GEMINI_API_KEY=sua_gemini_api_key
    ```
 
