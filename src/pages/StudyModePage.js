@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../services/firebase';
-import { collection, getDocs, query, orderBy, limit, addDoc, Timestamp, doc, getDoc } from 'firebase/firestore';
+import { supabase } from '../services/supabaseClient';
 import { useAuth } from '../utils/hooks';
 import { useLocation } from 'react-router-dom';
 
@@ -62,9 +61,10 @@ const StudyModePage = () => {
       try {
         const { data, error } = await supabase
           .from('quizzes')
-          .select('*');
+          .select('*')
+          .eq('user_id', user.id);
         if (error) throw error;
-        setQuizzes(data);
+        setQuizzes(data || []);
       } catch (err) {
         console.error('StudyModePage: Erro ao carregar quizzes:', err);
       }

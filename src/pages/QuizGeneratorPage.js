@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../services/firebase';
-import { collection, getDocs, addDoc, Timestamp, doc, getDoc } from 'firebase/firestore';
+import { supabase } from '../services/supabaseClient';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { useAuth } from '../utils/hooks';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -22,6 +21,7 @@ const QuizGeneratorPage = () => {
   const [quizMode, setQuizMode] = useState('prova'); // 'prova' ou 'teste'
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
   // Estados do modo de estudo
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -59,12 +59,12 @@ const QuizGeneratorPage = () => {
     const loadData = async () => {
       // Carregar materiais
       try {
-        const querySnapshot = await getDocs(collection(db, 'users', user.uid, 'library'));
-        const materialsData = querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        setMaterials(materialsData);
+        const { data: materialsData, error } = await supabase
+          .from('library')
+          .select('*')
+          .eq('user_id', user.uid);
+        if (error) throw error;
+        setMaterials(materialsData || []);
       } catch (err) {
         console.error('Erro ao carregar materiais:', err);
       }
@@ -75,13 +75,16 @@ const QuizGeneratorPage = () => {
 
       if (quizIdFromUrl) {
         try {
-          const quizDocRef = doc(db, 'users', user.uid, 'quizzes', quizIdFromUrl);
-          const quizDocSnap = await getDoc(quizDocRef);
-          if (quizDocSnap.exists()) {
-            const quizData = { id: quizDocSnap.id, ...quizDocSnap.data(), createdAt: quizDocSnap.data().createdAt?.toDate() };
-            console.log("QuizGeneratorPage: Quiz carregado da URL:", quizData);
-            // Garantir que quizData tenha a propriedade questions
-            const quizDataWithQuestions = { questions: [], ...quizData };
+          const { data: quizData, error } = await supabase
+            .from('quizzes')
+            .select('*')
+            .eq('id', quizIdFromUrl)
+            .eq('user_id', user.uid)
+            .single();
+          if (error) throw error;
+          if (quizData) {
+            const quizDataWithQuestions = { questions: [], ...quizData, createdAt: quizData.created_at ? new Date(quizData.created_at) : null };
+            console.log("QuizGeneratorPage: Quiz carregado da URL:", quizDataWithQuestions);
             setGeneratedQuiz(quizDataWithQuestions);
             setQuizConfig(prev => ({
               ...prev,
@@ -265,13 +268,27 @@ const QuizGeneratorPage = () => {
     };
 
     try {
-      const { error } = await supabase.from('quiz_history').insert([attemptData]);
+      const { error } = await supabase
+        .from('quiz_history')
+        .insert([attemptData]);
       if (error) throw error;
       setSuccess('Tentativa salva com sucesso!');
     } catch (err) {
       setError('Erro ao salvar tentativa: ' + err.message);
     }
 
+    setSelectedOption(null);
+    setShowExplanation(false);
+    setScore(0);
+    setAnswers([]);
+    setTimeLeft(generatedQuiz.questions.length * 60);
+    setIsTimerActive(true);
+    setQuizStarted(true);
+  };
+
+  // Função para reiniciar o quiz
+  const handleRestartQuiz = () => {
+    setCurrentQuestionIndex(0);
     setSelectedOption(null);
     setShowExplanation(false);
     setScore(0);
@@ -405,6 +422,9 @@ const QuizGeneratorPage = () => {
             
             {error && (
               <div className="text-red-500 text-sm">{error}</div>
+            )}
+            {success && (
+              <div className="text-green-500 text-sm">{success}</div>
             )}
           </form>
         </div>
