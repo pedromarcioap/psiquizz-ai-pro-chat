@@ -69,40 +69,27 @@ const DashboardPage = () => {
           totalQuestions += attempt.perguntas?.length || 0;
           totalScore += attempt.pontuação || 0;
         });
+        // Calcula estatísticas
         const averageScore = (attemptsData && attemptsData.length > 0)
           ? Math.round((totalScore / (attemptsData.length || 1)) * 100) / 100
           : 0;
-          const generatedQuizzesSnapshot = await getDocs(generatedQuizzesQuery);
-          generatedQuizzesData = generatedQuizzesSnapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data(),
-            createdAt: doc.data().createdAt?.toDate()
-          }));
-          for (const quiz of generatedQuizzesData) await saveLocalFirst('generatedQuizzes', compress(JSON.stringify(quiz)));
-        }
-
-        if (attemptsData.length > 0) {
-          const totalScore = attemptsData.reduce((acc, attempt) => {
-            if (!attempt || !attempt.totalQuestions || attempt.totalQuestions === 0) return acc;
-            const percent = (attempt.score / attempt.totalQuestions) * 100;
-            return acc + Math.min(Math.max(percent, 0), 100);
-          }, 0);
-          const averageScore = Math.round(totalScore / attemptsData.length);
-          const totalQuestions = attemptsData.reduce((acc, attempt) => acc + attempt.totalQuestions, 0);
-
-          const newStats = {
-            averageScore,
-            quizzesTaken: attemptsData.length,
-            totalQuestions,
-          };
-          setStats(newStats);
-          getStudyInsights(attemptsData, newStats);
-        } else {
-          setInsights("Realize alguns quizzes para obter insights sobre seus estudos.");
-        }
+        const newStats = {
+          averageScore,
+          quizzesTaken: attemptsData.length,
+          totalQuestions,
+        };
+        setStats(newStats);
+        getStudyInsights(attemptsData, newStats);
         setRecentAttempts(attemptsData.slice(0, 3));
         setAllAttempts(attemptsData);
-        setGeneratedQuizzes(generatedQuizzesData);
+        // Carregar quizzes gerados do Supabase (ajuste conforme tabela real)
+        const { data: quizzesData, error: quizzesError } = await supabase
+          .from('generated_quizzes')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('criado_em', { ascending: false });
+        if (quizzesError) throw quizzesError;
+        setGeneratedQuizzes(quizzesData || []);
       } catch (err) {
         console.error('Erro ao carregar dados do dashboard:', err);
       } finally {

@@ -253,14 +253,30 @@ const QuizGeneratorPage = () => {
     const finalScore = answers.filter(answer => answer.isCorrect).length; // Recalcular score com base nas respostas
 
     const attemptData = {
-      quizId: generatedQuiz.id || `generated-${Timestamp.now().toMillis()}`, // Gerar um ID se não houver
+      user_id: user.id,
+      quiz_id: generatedQuiz.id || `generated-${Date.now()}`,
       topic: quizConfig.topic,
+      difficulty: quizConfig.difficulty,
+      score: finalScore,
+      total_questions: generatedQuiz.questions.length,
+      attempted_at: new Date().toISOString(),
+      time_spent: timeSpent,
+      answers,
+    };
+
+    try {
+      const { error } = await supabase.from('quiz_history').insert([attemptData]);
+      if (error) throw error;
+      setSuccess('Tentativa salva com sucesso!');
+    } catch (err) {
+      setError('Erro ao salvar tentativa: ' + err.message);
+    }
+
     setSelectedOption(null);
     setShowExplanation(false);
     setScore(0);
     setAnswers([]);
-    const timePerQuestion = 60;
-    setTimeLeft(generatedQuiz.questions.length * timePerQuestion);
+    setTimeLeft(generatedQuiz.questions.length * 60);
     setIsTimerActive(true);
     setQuizStarted(true);
   };
