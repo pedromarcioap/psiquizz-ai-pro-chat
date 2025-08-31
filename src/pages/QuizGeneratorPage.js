@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../services/firebase';
-import { collection, getDocs, addDoc, Timestamp } from 'firebase/firestore';
+import { supabase } from '../services/supabaseClient';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { useAuth } from '../utils/hooks';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 const QuizGeneratorPage = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation(); // Adicionado useLocation
   const [materials, setMaterials] = useState([]);
   const [selectedMaterial, setSelectedMaterial] = useState('');
   const [quizConfig, setQuizConfig] = useState({
@@ -15,30 +17,113 @@ const QuizGeneratorPage = () => {
     numQuestions: 5,
     numOptions: 4
   });
-  const [generatedQuiz, setGeneratedQuiz] = useState(null);
+  const [generatedQuiz, setGeneratedQuiz] = useState({ questions: [] });
+  const [quizMode, setQuizMode] = useState('prova'); // 'prova' ou 'teste'
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [userAnswers, setUserAnswers] = useState({});
-  const [showResults, setShowResults] = useState(false);
+  const [success, setSuccess] = useState('');
 
-  // Carregar materiais da biblioteca
+  // Estados do modo de estudo
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [selectedOption, setSelectedOption] = useState(null);
+  const [showExplanation, setShowExplanation] = useState(false);
+  const [score, setScore] = useState(0);
+  const [answers, setAnswers] = useState([]);
+  const [timeLeft, setTimeLeft] = useState(null);
+  const [isTimerActive, setIsTimerActive] = useState(false);
+  const [quizStarted, setQuizStarted] = useState(false); // Novo estado para controlar o início do quiz
+
+  // Função para iniciar o quiz
+  const startQuiz = (quizData) => {
+    setGeneratedQuiz(quizData);
+    setCurrentQuestionIndex(0);
+    setSelectedOption(null);
+    setShowExplanation(false);
+    setScore(0);
+    setAnswers([]);
+    if (quizMode === 'prova') {
+      const timePerQuestion = 60;
+      setTimeLeft(quizData.questions.length * timePerQuestion);
+      setIsTimerActive(true);
+    } else {
+      setTimeLeft(null);
+      setIsTimerActive(false);
+    }
+    setQuizStarted(true);
+  };
+
+  // Carregar materiais da biblioteca e/ou quiz da URL
   useEffect(() => {
     if (!user) return;
-    const loadMaterials = async () => {
+
+    const loadData = async () => {
+      // Carregar materiais
       try {
-        const querySnapshot = await getDocs(collection(db, 'users', user.uid, 'library'));
-        const materialsData = querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        setMaterials(materialsData);
+        const { data: materialsData, error } = await supabase
+          .from('library')
+          .select('*')
+          .eq('user_id', user.uid);
+        if (error) throw error;
+        setMaterials(materialsData || []);
       } catch (err) {
         console.error('Erro ao carregar materiais:', err);
       }
+
+      // Carregar quiz da URL, se houver
+      const params = new URLSearchParams(location.search);
+      const quizIdFromUrl = params.get('quizId');
+
+      if (quizIdFromUrl) {
+        try {
+          const { data: quizData, error } = await supabase
+            .from('quizzes')
+            .select('*')
+            .eq('id', quizIdFromUrl)
+            .eq('user_id', user.uid)
+            .single();
+          if (error) throw error;
+          if (quizData) {
+            const quizDataWithQuestions = { questions: [], ...quizData, createdAt: quizData.created_at ? new Date(quizData.created_at) : null };
+            console.log("QuizGeneratorPage: Quiz carregado da URL:", quizDataWithQuestions);
+            setGeneratedQuiz(quizDataWithQuestions);
+            setQuizConfig(prev => ({
+              ...prev,
+              topic: quizDataWithQuestions.topic,
+              difficulty: quizDataWithQuestions.difficulty,
+              numQuestions: quizDataWithQuestions.questions?.length || 0,
+            }));
+            // Iniciar o quiz automaticamente se for carregado da URL
+            startQuiz(quizDataWithQuestions);
+          } else {
+            console.warn("QuizGeneratorPage: Quiz não encontrado na URL:", quizIdFromUrl);
+          }
+        } catch (err) {
+          console.error('QuizGeneratorPage: Erro ao carregar quiz da URL:', err);
+        }
+      }
     };
 
-    loadMaterials();
-  }, [user]);
+    loadData();
+  }, [user, location.search]);
+
+  // Efeito para o cronômetro
+  useEffect(() => {
+    if (!isTimerActive || timeLeft === null || !quizStarted) return;
+
+    if (timeLeft === 0) {
+      setIsTimerActive(false);
+      // Finaliza o quiz automaticamente
+      setCurrentQuestionIndex(generatedQuiz.questions.length);
+      handleSaveAttempt();
+      return;
+    }
+
+    const timerId = setInterval(() => {
+      setTimeLeft(prevTime => prevTime - 1);
+    }, 1000);
+
+    return () => clearInterval(timerId);
+  }, [isTimerActive, timeLeft, quizStarted, generatedQuiz]);
 
   // Função para lidar com mudanças no formulário
   const handleConfigChange = (e) => {
@@ -54,107 +139,185 @@ const QuizGeneratorPage = () => {
     e.preventDefault();
     setLoading(true);
     setError('');
+    setGeneratedQuiz({ questions: [] }); // Resetar quiz gerado
+    setQuizStarted(false); // Resetar estado de quiz iniciado
+    setCurrentQuestionIndex(0);
+    setSelectedOption(null);
+    setShowExplanation(false);
+    setScore(0);
+    setAnswers([]);
+    setTimeLeft(null);
+    setIsTimerActive(false);
+
+    if (!user) {
+      setError('Você precisa estar logado para gerar um quiz.');
+      setLoading(false);
+      return;
+    }
 
     try {
-      // Construir o prompt para a IA
-      let prompt = `Gere um quiz educacional com as seguintes especificações:
-      Tópico: ${quizConfig.topic}
-      Subtópicos: ${quizConfig.subtopics}
-      Dificuldade: ${quizConfig.difficulty}
-      Número de questões: ${quizConfig.numQuestions}
-      Número de opções por questão: ${quizConfig.numOptions}
-      
-      Forneça a resposta no formato JSON com a seguinte estrutura:
-      {
-        "questions": [
-          {
-            "question": "Texto da pergunta",
-            "options": ["Opção 1", "Opção 2", "Opção 3", "Opção 4"],
-            "correctAnswer": "Opção correta",
-            "explanation": "Explicação didática da resposta"
-          }
-        ]
-      }`;
-
-      // Se um material foi selecionado, incluir seu conteúdo no prompt
-      if (selectedMaterial) {
-        const material = materials.find(m => m.id === selectedMaterial);
-        if (material) {
-          prompt += `\n\nConteúdo do material para basear o quiz:\n${material.content.substring(0, 1000)}...`;
-        }
+      // Monta preferências para o backend
+      const preferences = {
+        ...quizConfig,
+        material: selectedMaterial ? materials.find(m => m.id === selectedMaterial)?.content : undefined
+      };
+      // Chamada ao backend para quiz otimizado
+      // Supabase client automatically handles sending the session token in the Authorization header
+      console.log("Preferências enviadas:", preferences);
+      const { data: { session } } = await supabase.auth.getSession();
+      console.log("Session object:", session);
+      console.log("Access token:", session?.access_token);
+      if (!session || !session.access_token) {
+        setError('Sessão de usuário não encontrada ou token ausente. Por favor, faça login novamente.');
+        setLoading(false);
+        return;
       }
-
-      // Chamar a API Gemini
-      const genAI = new GoogleGenerativeAI(process.env.REACT_APP_GEMINI_API_KEY);
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" }); // Usar modelo mais recente
-      
-      // Adicionar tratamento de erro mais detalhado
-      let text;
+  const response = await fetch('http://localhost:4000/api/quiz', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ preferences }),
+      });
+      console.log("Resposta do backend:", response);
+      const data = await response.json();
+      let quizObj = null;
       try {
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        text = response.text();
-        
-        // Verificar se a resposta é válida
-        if (!text || text.trim() === '') {
-          throw new Error('Resposta vazia da API Gemini');
-        }
-      } catch (apiError) {
-        console.error('Erro específico da API Gemini:', apiError);
-        throw new Error(`Falha na comunicação com a API Gemini: ${apiError.message}`);
+        quizObj = typeof data.quiz === 'string' ? JSON.parse(data.quiz) : data.quiz;
+      } catch (err) {
+        setError('Erro ao interpretar resposta do backend. Tente novamente.');
+        setLoading(false);
+        return;
       }
-      
-      // Tentar parsear o JSON da resposta
-      let quizData;
-      try {
-        // Remover possíveis delimitadores de código
-        const jsonStart = text.indexOf('{');
-        const jsonEnd = text.lastIndexOf('}') + 1;
-        const jsonString = text.substring(jsonStart, jsonEnd);
-        quizData = JSON.parse(jsonString);
-      } catch (parseError) {
-        throw new Error('Falha ao parsear o JSON da resposta da IA');
+      setGeneratedQuiz(quizObj);
+      setAnswers([]);
+      if (quizMode === 'prova') {
+        const timePerQuestion = 60; // 60 segundos por questão
+        setTimeLeft(quizObj.questions.length * timePerQuestion);
+        setIsTimerActive(true);
+      } else {
+        setTimeLeft(null);
+        setIsTimerActive(false);
       }
-
-      setGeneratedQuiz(quizData);
+      setQuizStarted(true);
       setLoading(false);
     } catch (err) {
       setError('Erro ao gerar quiz: ' + err.message);
       setLoading(false);
     }
+  }
+
+  // Função para lidar com a seleção de uma opção
+  const handleOptionSelect = (option) => {
+    if (showExplanation) return; // Não permitir mudar a resposta após ver a explicação
+    setSelectedOption(option);
   };
 
-  // Função para salvar o quiz gerado
-  const handleSaveQuiz = async () => {
-    if (!generatedQuiz || !user) return;
+  // Função para ir para a próxima pergunta
+  const handleNextQuestion = () => {
+    if (selectedOption === null) {
+      alert('Por favor, selecione uma opção antes de continuar.');
+      return;
+    }
 
-    try {
-      await addDoc(collection(db, 'users', user.uid, 'quizzes'), {
-        topic: quizConfig.topic,
-        difficulty: quizConfig.difficulty,
-        questions: generatedQuiz.questions,
-        createdAt: Timestamp.fromDate(new Date()),
-        materialId: selectedMaterial || null,
-      });
+    // Verificar se a resposta está correta
+    const currentQuestion = generatedQuiz.questions[currentQuestionIndex];
+    const isCorrect = selectedOption === currentQuestion.correctAnswer;
+    
+    // Atualizar pontuação e respostas
+    if (isCorrect) {
+      setScore(prev => prev + 1);
+    }
+    
+    const newAnswer = {
+      question: currentQuestion.question,
+      selectedOption,
+      correctAnswer: currentQuestion.correctAnswer,
+      isCorrect,
+      explanation: currentQuestion.explanation
+    };
+    
+    setAnswers(prev => [...prev, newAnswer]);
+    
+    // Mostrar explicação
+    setShowExplanation(true);
+  };
 
-      alert('Quiz salvo com sucesso!');
-    } catch (err) {
-      setError('Erro ao salvar quiz: ' + err.message);
+  // Função para ir para a próxima pergunta ou finalizar
+  const handleContinue = () => {
+    if (currentQuestionIndex < generatedQuiz.questions.length - 1) {
+      // Ir para a próxima pergunta
+      setCurrentQuestionIndex(prev => prev + 1);
+      setSelectedOption(null);
+      setShowExplanation(false);
+    } else {
+      // Finalizar quiz
+      handleSaveAttempt();
+      setShowExplanation(false);
+      setIsTimerActive(false);
     }
   };
 
-  // Função para lidar com a seleção de resposta
-  const handleAnswerSelection = (questionIndex, selectedOption) => {
-    setUserAnswers(prev => ({
-      ...prev,
-      [questionIndex]: selectedOption
-    }));
+  const handleSaveAttempt = async () => {
+    if (!user || !generatedQuiz) return;
+    const timePerQuestion = 60;
+    const totalTime = generatedQuiz.questions.length * timePerQuestion;
+    const timeSpent = totalTime - (timeLeft || 0); // Usar 0 se timeLeft for nulo
+
+    const finalScore = answers.filter(answer => answer.isCorrect).length; // Recalcular score com base nas respostas
+
+    const attemptData = {
+      user_id: user.id,
+      quiz_id: generatedQuiz.id || `generated-${Date.now()}`,
+      topic: quizConfig.topic,
+      difficulty: quizConfig.difficulty,
+      score: finalScore,
+      total_questions: generatedQuiz.questions.length,
+      attempted_at: new Date().toISOString(),
+      time_spent: timeSpent,
+      answers,
+    };
+
+    try {
+      const { error } = await supabase
+        .from('quiz_history')
+        .insert([attemptData]);
+      if (error) throw error;
+      setSuccess('Tentativa salva com sucesso!');
+    } catch (err) {
+      setError('Erro ao salvar tentativa: ' + err.message);
+    }
+
+    setSelectedOption(null);
+    setShowExplanation(false);
+    setScore(0);
+    setAnswers([]);
+    setTimeLeft(generatedQuiz.questions.length * 60);
+    setIsTimerActive(true);
+    setQuizStarted(true);
   };
 
-  // Função para verificar as respostas
-  const handleCheckAnswers = () => {
-    setShowResults(true);
+  // Função para reiniciar o quiz
+  const handleRestartQuiz = () => {
+    setCurrentQuestionIndex(0);
+    setSelectedOption(null);
+    setShowExplanation(false);
+    setScore(0);
+    setAnswers([]);
+    setTimeLeft(generatedQuiz.questions.length * 60);
+    setIsTimerActive(true);
+    setQuizStarted(true);
   };
+
+  const formatTime = (seconds) => {
+    const minutes = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const currentQuestion = generatedQuiz?.questions[currentQuestionIndex];
+  const progress = generatedQuiz ? ((currentQuestionIndex + 1) / generatedQuiz.questions.length) * 100 : 0;
 
   return (
     <div className="max-w-4xl mx-auto py-8 px-4">
@@ -272,97 +435,184 @@ const QuizGeneratorPage = () => {
             {error && (
               <div className="text-red-500 text-sm">{error}</div>
             )}
+            {success && (
+              <div className="text-green-500 text-sm">{success}</div>
+            )}
           </form>
         </div>
       ) : (
+        // Renderização do quiz
         <div className="bg-white shadow rounded-lg p-6">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-xl font-semibold">Quiz Gerado: {quizConfig.topic}</h2>
-            <button
-              onClick={handleSaveQuiz}
-              className="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
-            >
-              Salvar Quiz
-            </button>
-          </div>
-          
-          <div className="space-y-6">
-            {generatedQuiz.questions.map((question, index) => (
-              <div key={index} className="border border-gray-200 rounded-lg p-4">
-                <h3 className="font-medium text-gray-900 mb-2">
-                  {index + 1}. {question.question}
-                </h3>
-                <div className="space-y-2">
-                  {question.options.map((option, optIndex) => {
-                    const isSelected = userAnswers[index] === option;
-                    const isCorrect = question.correctAnswer === option;
-                    let buttonClass = 'w-full text-left p-2 rounded-md border';
-
-                    if (showResults) {
-                      if (isCorrect) {
-                        buttonClass += ' bg-green-100 border-green-300 text-green-800';
-                      } else if (isSelected && !isCorrect) {
-                        buttonClass += ' bg-red-100 border-red-300 text-red-800';
-                      } else {
-                        buttonClass += ' bg-gray-50 border-gray-200';
-                      }
-                    } else {
-                      buttonClass += isSelected ? ' bg-indigo-100 border-indigo-300' : ' bg-white hover:bg-gray-50';
-                    }
-
-                    return (
-                      <button
-                        key={optIndex}
-                        onClick={() => !showResults && handleAnswerSelection(index, option)}
-                        className={buttonClass}
-                        disabled={showResults}
-                      >
-                        {option}
-                      </button>
-                    );
-                  })}
-                </div>
-                {showResults && (
-                  <div className="mt-3 p-3 bg-blue-50 rounded-lg">
-                    <p className="text-sm text-gray-800">
-                      <span className="font-semibold">Resposta correta:</span> {question.correctAnswer}
-                    </p>
-                    <p className="text-sm text-gray-700 mt-1">
-                      <span className="font-semibold">Explicação:</span> {question.explanation}
-                    </p>
-                  </div>
-                )}
+          {!quizStarted ? (
+            <div className="text-center">
+              <h2 className="text-2xl font-bold text-gray-900 mb-4">Quiz Gerado!</h2>
+              <p className="text-gray-700 mb-6">Tópico: {quizConfig.topic}</p>
+              <div className="mb-4 flex justify-center gap-4">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="quizMode"
+                    value="prova"
+                    checked={quizMode === 'prova'}
+                    onChange={() => setQuizMode('prova')}
+                  />
+                  Modo Prova
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="quizMode"
+                    value="teste"
+                    checked={quizMode === 'teste'}
+                    onChange={() => setQuizMode('teste')}
+                  />
+                  Modo Teste
+                </label>
               </div>
-            ))}
-          </div>
-          
-          <div className="mt-6 flex space-x-4">
-            {!showResults ? (
               <button
-                onClick={handleCheckAnswers}
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                onClick={() => startQuiz(generatedQuiz)}
+                className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
               >
-                Verificar Respostas
+                Iniciar Quiz
               </button>
-            ) : (
               <button
-                onClick={() => {
-                  setGeneratedQuiz(null);
-                  setUserAnswers({});
-                  setShowResults(false);
-                }}
-                className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                onClick={() => setGeneratedQuiz(null)}
+                className="ml-4 inline-flex items-center px-6 py-3 border border-gray-300 text-base font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
               >
                 Gerar Novo Quiz
               </button>
-            )}
-            <button
-              onClick={handleSaveQuiz}
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
-            >
-              Salvar Quiz
-            </button>
-          </div>
+            </div>
+          ) : currentQuestionIndex >= generatedQuiz.questions.length ? (
+            // Tela de resultados finais
+            <div className="bg-white shadow rounded-lg p-6">
+              <h2 className="text-2xl font-bold text-center text-gray-900 mb-6">Quiz Concluído!</h2>
+              
+              <div className="text-center mb-8">
+                <div className="text-4xl font-bold text-indigo-600 mb-2">
+                  {score}/{generatedQuiz.questions.length}
+                </div>
+                <div className="text-lg text-gray-700">
+                  Pontuação: {Math.round((score/generatedQuiz.questions.length)*100)}%
+                </div>
+              </div>
+              
+              <div className="space-y-4 mb-8">
+                <h3 className="text-lg font-semibold text-gray-900">Respostas:</h3>
+                {answers.map((answer, index) => (
+                  <div key={index} className={`border rounded-lg p-4 ${answer.isCorrect ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
+                    <h4 className="font-medium text-gray-900 mb-2">{answer.question}</h4>
+                    <p className="text-sm mb-1">
+                      <span className="font-medium">Sua resposta:</span> {answer.selectedOption} 
+                      {answer.isCorrect ? ' ✓' : ' ✗'}
+                    </p>
+                    {!answer.isCorrect && (
+                      <p className="text-sm mb-1">
+                        <span className="font-medium">Resposta correta:</span> {answer.correctAnswer}
+                      </p>
+                    )}
+                    <p className="text-sm">
+                      <span className="font-semibold">Explicação:</span> {answer.explanation}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              
+              <div className="flex justify-center space-x-4">
+                <button
+                  onClick={handleRestartQuiz}
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                >
+                  Refazer Quiz
+                </button>
+                <button
+                  onClick={() => setGeneratedQuiz(null)} // Voltar para a tela de geração
+                  className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                >
+                  Gerar Novo Quiz
+                </button>
+              </div>
+            </div>
+          ) : (
+            // Tela de pergunta
+            <div className="bg-white shadow rounded-lg p-6">
+              <div className="mb-6">
+                <div className="flex justify-between items-center text-sm text-gray-600 mb-1">
+                  <span>Pergunta {currentQuestionIndex + 1} de {generatedQuiz.questions.length}</span>
+                  <span className="font-semibold text-lg text-gray-800">{formatTime(timeLeft)}</span>
+                  <span>Pontuação: {score}</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div 
+                    className="bg-indigo-600 h-2 rounded-full" 
+                    style={{ width: `${progress}%` }}
+                  ></div>
+                </div>
+              </div>
+              
+              <div className="mb-6">
+                <h2 className="text-xl font-semibold text-gray-900 mb-4">
+                  {currentQuestion?.question}
+                </h2>
+                
+                <div className="space-y-3">
+                  {currentQuestion?.options.map((option, index) => (
+                    <button
+                      key={index}
+                      onClick={() => handleOptionSelect(option)}
+                      disabled={showExplanation}
+                      className={`w-full text-left p-3 rounded-lg border transition-colors ${
+                        selectedOption === option 
+                          ? showExplanation && option === currentQuestion.correctAnswer
+                            ? 'border-green-500 bg-green-50' 
+                            : showExplanation && option !== currentQuestion.correctAnswer && selectedOption === option
+                              ? 'border-red-500 bg-red-50'
+                              : 'border-indigo-500 bg-indigo-50'
+                          : showExplanation && option === currentQuestion.correctAnswer
+                            ? 'border-green-500 bg-green-50'
+                            : 'border-gray-300 hover:bg-gray-50'
+                      } ${
+                        showExplanation && option === currentQuestion.correctAnswer ? 'font-semibold' : ''
+                      }`}
+                    >
+                      {option}
+                      {showExplanation && option === currentQuestion.correctAnswer && (
+                        <span className="ml-2 text-green-600">✓ Resposta correta</span>
+                      )}
+                      {showExplanation && option !== currentQuestion.correctAnswer && selectedOption === option && (
+                        <span className="ml-2 text-red-600">✗ Sua resposta</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              
+              {showExplanation && (
+                <div className="mb-6 p-4 bg-blue-50 rounded-lg">
+                  <h3 className="font-semibold text-gray-900 mb-2">Explicação:</h3>
+                  <p className="text-gray-700">{currentQuestion?.explanation}</p>
+                </div>
+              )}
+              
+              <div className="flex justify-center">
+                {!showExplanation ? (
+                  <button
+                    onClick={handleNextQuestion}
+                    disabled={selectedOption === null}
+                    className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+                  >
+                    Verificar Resposta
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleContinue}
+                    className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                  >
+                    {currentQuestionIndex < generatedQuiz.questions.length - 1 ? 'Próxima Pergunta' : 'Ver Resultados'}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

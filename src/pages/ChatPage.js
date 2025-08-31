@@ -1,12 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { db } from '../services/firebase';
-import { collection, addDoc, getDocs, deleteDoc, query, orderBy, Timestamp, doc, updateDoc } from 'firebase/firestore';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { supabase } from '../services/supabaseClient';
 import { useAuth } from '../utils/hooks';
 import ReactMarkdown from 'react-markdown';
 import ChatHistorySidebar from '../components/ChatHistorySidebar';
 
-const ChatPage = () => {
+const ChatPage = ({ selectedApiProvider, openRouterConfig, huggingFaceConfig, useWebSearch }) => {
   const { user } = useAuth();
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -33,13 +31,20 @@ const ChatPage = () => {
   useEffect(() => {
     if (!user) return;
     const loadChats = async () => {
-      const q = query(collection(db, 'users', user.uid, 'chats'), orderBy('createdAt', 'desc'));
-      const querySnapshot = await getDocs(q);
-      const chatsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setChats(chatsData);
-      if (chatsData.length > 0 && !activeChatId) {
-        setActiveChatId(chatsData.id);
-        setChatName(chatsData.name);
+      try {
+        const { data, error } = await supabase
+          .from('chat_history')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('criado_em', { ascending: false });
+        if (error) throw error;
+        setChats(data || []);
+        if ((data || []).length > 0 && !activeChatId) {
+          setActiveChatId(data[0].id);
+          setChatName(data[0].chat_name || 'Chat');
+        }
+      } catch (err) {
+        setError('Erro ao carregar chats: ' + err.message);
       }
     };
     loadChats();
@@ -52,10 +57,17 @@ const ChatPage = () => {
       return;
     }
     const loadMessages = async () => {
-      const q = query(collection(db, 'users', user.uid, 'chats', activeChatId, 'messages'), orderBy('timestamp'));
-      const querySnapshot = await getDocs(q);
-      const messagesData = querySnapshot.docs.map(doc => ({ ...doc.data(), timestamp: doc.data().timestamp?.toDate() }));
-      setMessages(messagesData);
+      try {
+        const { data, error } = await supabase
+          .from('chat_history')
+          .select('*')
+          .eq('id', activeChatId)
+          .eq('user_id', user.id);
+        if (error) throw error;
+        setMessages(data || []);
+      } catch (err) {
+        setError('Erro ao carregar mensagens: ' + err.message);
+      }
     };
     loadMessages();
   }, [activeChatId, user]);
@@ -65,37 +77,46 @@ const ChatPage = () => {
     if (!user) return;
     const loadLibraryMaterials = async () => {
       try {
-        const querySnapshot = await getDocs(collection(db, 'users', user.uid, 'library'));
-        const materialsData = querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        setLibraryMaterials(materialsData);
+        const { data, error } = await supabase
+          .from('library')
+          .select('*')
+          .eq('user_id', user.id);
+        if (error) throw error;
+        setLibraryMaterials(data || []);
       } catch (err) {
-        console.error('Erro ao carregar materiais da biblioteca:', err);
+        setError('Erro ao carregar materiais da biblioteca: ' + err.message);
       }
     };
-
     loadLibraryMaterials();
   }, [user]);
 
   const handleNewChat = async () => {
     const newChatName = `Chat ${new Date().toLocaleString('pt-BR')}`;
-    const newChat = {
-      name: newChatName,
-      createdAt: Timestamp.now(),
-    };
-    const docRef = await addDoc(collection(db, 'users', user.uid, 'chats'), newChat);
-    setActiveChatId(docRef.id);
-    setChatName(newChatName);
-    setMessages([]);
-    setChats(prev => [{ id: docRef.id, ...newChat }, ...prev]);
+    try {
+      const { data, error } = await supabase.from('chat_history').insert([
+        {
+          user_id: user.id,
+          chat_name: newChatName,
+          role: 'user',
+          conteudo: '',
+          criado_em: new Date().toISOString()
+        }
+      ]).select();
+      if (error) throw error;
+      const chatId = data && data[0] && data[0].id;
+      setActiveChatId(chatId);
+      setChatName(newChatName);
+      setMessages([]);
+      setChats(prev => [{ id: chatId, ...data[0] }, ...prev]);
+    } catch (err) {
+      setError('Erro ao criar novo chat: ' + err.message);
+    }
   };
 
   const handleSelectChat = (chatId) => {
     const selected = chats.find(c => c.id === chatId);
     setActiveChatId(chatId);
-    setChatName(selected.name);
+    setChatName(selected.chat_name);
   };
 
   const handleSendMessageToAI = async (messageText) => {
@@ -108,39 +129,73 @@ const ChatPage = () => {
 
       if (!currentChatId) {
         const newChatName = `Chat ${new Date().toLocaleString('pt-BR')}`;
-        const newChat = { name: newChatName, createdAt: Timestamp.now() };
-        const docRef = await addDoc(collection(db, 'users', user.uid, 'chats'), newChat);
-        currentChatId = docRef.id;
+        const { data, error } = await supabase.from('chat_history').insert([
+          {
+            user_id: user.id,
+            chat_name: newChatName,
+            role: 'user',
+            conteudo: '',
+            criado_em: new Date().toISOString()
+          }
+        ]).select();
+        if (error) throw error;
+        currentChatId = data && data[0] && data[0].id;
         setActiveChatId(currentChatId);
         setChatName(newChatName);
-        setChats(prev => [{ id: docRef.id, ...newChat }, ...prev]);
+        setChats(prev => [{ id: currentChatId, ...data[0] }, ...prev]);
       }
 
-      const userMessage = { role: 'user', content: messageText, timestamp: new Date() };
+      const userMessage = { role: 'user', conteudo: messageText, criado_em: new Date().toISOString() };
       setMessages(prev => [...prev, userMessage]);
 
-      await addDoc(collection(db, 'users', user.uid, 'chats', currentChatId, 'messages'), {
-        ...userMessage,
-        timestamp: Timestamp.fromDate(userMessage.timestamp),
+      await supabase.from('chat_history').insert([
+        {
+          id: currentChatId,
+          user_id: user.id,
+          role: userMessage.role,
+          conteudo: userMessage.conteudo,
+          criado_em: userMessage.criado_em
+        }
+      ]);
+
+      // Monta contexto para o backend
+      const contextMessages = [
+        { role: 'system', conteudo: 'Você é Izy, uma mentora de estudos inteligente e amigável.' },
+        ...(selectedMaterial ? [{ role: 'system', conteudo: `Contexto: ${selectedMaterial.conteudo}` }] : []),
+        ...messages,
+        userMessage
+      ];
+
+      // Chamada ao backend para resposta otimizada
+      const token = await user.getIdToken();
+      const response = await fetch('http://localhost:4000/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          messages: contextMessages,
+          selectedApiProvider,
+          openRouterConfig,
+          huggingFaceConfig,
+          useWebSearch,
+        }),
       });
-
-      const context = `Você é Izy, uma mentora de estudos inteligente e amigável...`;
-      const materialContext = selectedMaterial ? `\n\nContexto: ${selectedMaterial.content}` : '';
-      const finalPrompt = `${context}${materialContext}\n\nPergunta: ${messageText}`;
-
-      const genAI = new GoogleGenerativeAI(process.env.REACT_APP_GEMINI_API_KEY);
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
-      const result = await model.generateContent(finalPrompt);
-      const response = await result.response;
-      const aiText = response.text();
-
-      const aiMessage = { role: 'assistant', content: aiText, timestamp: new Date() };
+      const data = await response.json();
+      const aiText = data.reply || 'Não foi possível obter resposta.';
+      const aiMessage = { role: 'assistant', conteudo: aiText, criado_em: new Date().toISOString() };
       setMessages(prev => [...prev, aiMessage]);
 
-      await addDoc(collection(db, 'users', user.uid, 'chats', currentChatId, 'messages'), {
-        ...aiMessage,
-        timestamp: Timestamp.fromDate(aiMessage.timestamp),
-      });
+      await supabase.from('chat_history').insert([
+        {
+          id: currentChatId,
+          user_id: user.id,
+          role: aiMessage.role,
+          conteudo: aiMessage.conteudo,
+          criado_em: aiMessage.criado_em
+        }
+      ]);
 
       setLoading(false);
     } catch (err) {
@@ -156,22 +211,38 @@ const ChatPage = () => {
   };
 
   const handleRenameChat = async (chatId, newName) => {
-    const chatRef = doc(db, 'users', user.uid, 'chats', chatId);
-    await updateDoc(chatRef, { name: newName });
-    setChats(chats.map(c => c.id === chatId ? { ...c, name: newName } : c));
-    if (activeChatId === chatId) {
-      setChatName(newName);
+    try {
+      const { error } = await supabase
+        .from('chat_history')
+        .update({ chat_name: newName })
+        .eq('id', chatId)
+        .eq('user_id', user.id);
+      if (error) throw error;
+      setChats(chats.map(c => c.id === chatId ? { ...c, chat_name: newName } : c));
+      if (activeChatId === chatId) {
+        setChatName(newName);
+      }
+    } catch (err) {
+      setError('Erro ao renomear chat: ' + err.message);
     }
   };
 
   const handleDeleteChat = async (chatId) => {
-    // Adicionar a lógica para excluir subcoleção de mensagens aqui, se necessário
-    await deleteDoc(doc(db, 'users', user.uid, 'chats', chatId));
-    setChats(chats.filter(c => c.id !== chatId));
-    if (activeChatId === chatId) {
-      setActiveChatId(null);
-      setChatName('Novo Chat');
-      setMessages([]);
+    try {
+      const { error } = await supabase
+        .from('chat_history')
+        .delete()
+        .eq('id', chatId)
+        .eq('user_id', user.id);
+      if (error) throw error;
+      setChats(chats.filter(c => c.id !== chatId));
+      if (activeChatId === chatId) {
+        setActiveChatId(null);
+        setChatName('Novo Chat');
+        setMessages([]);
+      }
+    } catch (err) {
+      setError('Erro ao deletar chat: ' + err.message);
     }
   };
 

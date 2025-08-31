@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../services/firebase';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { supabase } from '../services/supabaseClient';
 import { useAuth } from '../utils/hooks';
 
 const SettingsPage = () => {
@@ -19,11 +18,14 @@ const SettingsPage = () => {
     const loadPrompts = async () => {
       if (authLoading || !user) return;
       try {
-        const docRef = doc(db, 'users', user.uid, 'settings', 'prompts');
-        const docSnap = await getDoc(docRef);
-        
-        if (docSnap.exists()) {
-          setPrompts(docSnap.data());
+        const { data, error } = await supabase
+          .from('settings')
+          .select('prompts')
+          .eq('user_id', user.id)
+          .single();
+        if (error && error.code !== 'PGRST116') throw error; // PGRST116: no rows found
+        if (data && data.prompts) {
+          setPrompts(data.prompts);
         } else {
           // Valores padrão se não existirem prompts salvos
           const defaultPrompts = {
@@ -71,30 +73,27 @@ O usuário pergunta: {input}`
   }, [user, authLoading]);
 
   // Função para salvar prompts
-  const handleSavePrompts = async () => {
-    if (authLoading) {
-      setError('Aguardando a verificação de autenticação...');
-      return;
-    }
-    if (!user) {
-      setError('Você precisa estar autenticado para salvar os prompts.');
-      return;
-    }
-
+  const handleSavePrompts = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    setSuccess('');
     try {
-      setLoading(true);
-      setError('');
-      setSuccess('');
-
-      await setDoc(doc(db, 'users', user.uid, 'settings', 'prompts'), prompts);
-      
+      // Upsert: atualiza se existe, insere se não existe
+      const { error } = await supabase
+        .from('settings')
+        .upsert([
+          {
+            user_id: user.id,
+            prompts: prompts
+          }
+        ], { onConflict: ['user_id'] });
+      if (error) throw error;
       setSuccess('Prompts salvos com sucesso!');
-      setLoading(false);
     } catch (err) {
-      console.error("Erro detalhado ao salvar prompts:", err);
-      setError(`Erro ao salvar prompts: ${err.code} - ${err.message}`);
-      setLoading(false);
+      setError('Erro ao salvar prompts: ' + err.message);
     }
+    setLoading(false);
   };
 
   return (

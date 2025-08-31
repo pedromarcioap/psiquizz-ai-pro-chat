@@ -1,13 +1,13 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { auth } from '../services/firebase';
+import { supabase } from '../services/supabaseClient';
 
 const Navbar = () => {
   const navigate = useNavigate();
 
   const handleLogout = async () => {
     try {
-      await auth.signOut();
+      await supabase.auth.signOut();
       navigate('/auth');
     } catch (error) {
       console.error('Erro ao sair:', error);
@@ -31,9 +31,6 @@ const Navbar = () => {
               </Link>
               <Link to="/quiz-generator" className="px-3 py-2 rounded-md text-sm font-medium hover:bg-indigo-500">
                 Novo Quizz
-              </Link>
-              <Link to="/study-mode" className="px-3 py-2 rounded-md text-sm font-medium hover:bg-indigo-500">
-                Modo de Estudo
               </Link>
               <Link to="/chat" className="px-3 py-2 rounded-md text-sm font-medium hover:bg-indigo-500">
                 Chat com Izy
