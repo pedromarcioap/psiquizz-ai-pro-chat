@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { supabase } from '../services/supabaseClient';
+import { databases } from '../services/appwriteClient'; // Only databases is needed here
 import { useAuth } from '../utils/hooks';
 import ReactMarkdown from 'react-markdown';
 import ChatHistorySidebar from '../components/ChatHistorySidebar';

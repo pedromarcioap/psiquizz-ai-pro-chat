@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { supabase } from './services/supabaseClient';
+import { account } from './services/appwriteClient';
 import AuthPage from './pages/AuthPage';
 import LibraryPage from './pages/LibraryPage';
 import ChatPage from './pages/ChatPage';
@@ -13,9 +13,7 @@ import Footer from './components/Footer';
 import ApiConfigModal from './components/ApiConfigModal';
 
 function App() {
-  const [user, setUser] = useState(null);
-  console.log('User state in App.js:', user);
-  const [loading, setLoading] = useState(true);
+  const { user, loading } = useAuth();
   // Orquestração de IA
   const getStoredConfig = () => {
     try {
@@ -35,16 +33,7 @@ function App() {
   const [huggingFaceConfig, setHuggingFaceConfig] = useState(initialConfig.huggingFaceConfig || { apiKey: '', model: '' });
   const [useWebSearch, setUseWebSearch] = useState(initialConfig.useWebSearch || false);
 
-  useEffect(() => {
-    const { data: { subscription: unsubscribe } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
-
-    return () => {
-      unsubscribe.unsubscribe();
-    };
-  }, []);
+  
 
   useEffect(() => {
     const configToStore = {

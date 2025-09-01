@@ -9,39 +9,31 @@ import chatRouter from './chat.js';
 import quizRouter from './quiz.js';
 import jwt from 'jsonwebtoken'; // For Supabase JWT verification
 import crypto from 'crypto'; // For hashPrompt, if still used
+// import { createClient } from '@supabase/supabase-js'; // REMOVE THIS IMPORT
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: 'http://localhost:3000',
+  credentials: true
+}));
 app.use(express.json());
 app.use(chatRouter);
 app.use(quizRouter);
 
+// REMOVE Supabase Admin client initialization
+// const supabaseAdmin = createClient(
+//   process.env.SUPABASE_URL, // Use SUPABASE_URL from backend .env
+//   process.env.SUPABASE_SERVICE_ROLE_KEY
+// );
+
 // --- Supabase JWT Authentication Middleware ---
 export async function authMiddleware(req, res, next) {
-  const token = req.headers.authorization?.split('Bearer ')[1];
-  console.log('--- authMiddleware Debug ---');
-  console.log('Token recebido no backend:', token);
-
-  if (!token) {
-    console.log('Erro: Token ausente.');
-    return res.status(401).json({ error: 'Token ausente' });
-  }
-
-  if (!process.env.SUPABASE_JWT_SECRET) {
-    console.error('Erro: SUPABASE_JWT_SECRET não configurado nas variáveis de ambiente.');
-    return res.status(500).json({ error: 'Configuração do servidor incompleta.' });
-  }
-
-  try {
-    const decoded = jwt.verify(token, process.env.SUPABASE_JWT_SECRET);
-    console.log('Token decodificado com sucesso:', decoded);
-    req.user = { uid: decoded.sub }; // Supabase user ID is in 'sub' claim
-    next();
-  } catch (err) {
-    console.error('Erro ao verificar token JWT no backend:', err.message);
-    return res.status(401).json({ error: 'Token inválido ou expirado.' });
-  }
-  console.log('--- Fim authMiddleware Debug ---');
+  // Placeholder for Appwrite authentication.
+  // For now, allow all requests to pass through.
+  // In a real Appwrite setup, you would verify session cookies or Appwrite JWTs here.
+  console.warn('AuthMiddleware is currently a placeholder. All requests are allowed.');
+  req.user = { uid: 'placeholder_user_id' }; // Provide a dummy user ID for now
+  next();
 }
 
 // --- Utility Functions (Keep if still used) ---

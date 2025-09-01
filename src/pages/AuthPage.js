@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { supabase } from '../services/supabaseClient';
+import { account } from '../services/appwriteClient';
 
 const AuthPage = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -13,27 +13,33 @@ const AuthPage = () => {
 
     try {
       if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
+        await account.createEmailSession(email, password);
       } else {
-        const { error } = await supabase.auth.signUp({ email, password });
-        if (error) throw error;
+        // Appwrite's create account requires a unique ID, email, and password
+        // We can generate a unique ID or let Appwrite generate one if not provided
+        await account.create('unique()', email, password);
+        await account.createEmailSession(email, password); // Log in after creating account
       }
       navigate('/dashboard'); // Redirect on success
     } catch (err) {
       console.error("Auth error:", err); // Log full error for debugging
-      setError(err.message || 'Ocorreu um erro desconhecido.'); // Use err.message or a generic message
+      // Appwrite errors have a 'message' property
+      setError(err.message || 'Ocorreu um erro desconhecido.');
     }
   };
 
   const handleGoogleSignIn = async () => {
     try {
-      const { error } = await supabase.auth.signInWithOAuth({ provider: 'google' });
-      if (error) throw error;
-      navigate('/dashboard'); // Redirect on success
+      // Appwrite's createOAuth2Session redirects to Google for authentication
+      // and then back to your app. 
+      // The URL should be where your Appwrite project is hosted, and then /auth/callback
+      // For local development, it might be http://localhost:3000/auth/callback
+      // You need to configure the redirect URL in your Appwrite console.
+      await account.createOAuth2Session('google', 'http://localhost:3000/dashboard', 'http://localhost:3000/auth');
+      // Appwrite handles the redirect, so no navigate('/dashboard') here
     } catch (err) {
       console.error("Auth error (Google):", err); // Log full error for debugging
-      setError(err.message || 'Ocorreu um erro desconhecido ao entrar com o Google.'); // Use err.message or a generic message
+      setError(err.message || 'Ocorreu um erro desconhecido ao entrar com o Google.');
     }
   };
 

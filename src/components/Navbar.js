@@ -1,13 +1,13 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { supabase } from '../services/supabaseClient';
+import { account } from '../services/appwriteClient';
 
 const Navbar = () => {
   const navigate = useNavigate();
 
   const handleLogout = async () => {
     try {
-      await supabase.auth.signOut();
+      await account.deleteSession('current'); // 'current' deletes the current session
       navigate('/auth');
     } catch (error) {
       console.error('Erro ao sair:', error);

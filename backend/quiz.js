@@ -28,35 +28,59 @@ function hashPrompt(prompt) {
 
 // Rota principal para geração de quiz
 router.post('/api/quiz', authMiddleware, async (req, res) => {
-  const { preferences } = req.body;
-  if (!preferences) return res.status(400).json({ error: 'Preferências ausentes' });
-
-  // Compacta e resume preferências
-  const prompt = `Gere um quiz com base nas preferências: ${JSON.stringify(preferences)}`;
-
-  // Gera hash do prompt para cache (Firestore caching removed)
-  // const db = admin.firestore(); // REMOVE
-  // const promptHash = hashPrompt(prompt); // Keep hashPrompt if needed for other caching
-  // const cacheRef = db.collection('quizCache').doc(promptHash); // REMOVE
-  // let cached = await cacheRef.get(); // REMOVE
-  // if (cached.exists) { // REMOVE
-  //   return res.json({ quiz: cached.data().response, source: 'cache' }); // REMOVE
-  // } // REMOVE
-
-  // Chamada à Gemini (mock, substitua pela API real)
-  let aiResponse = 'Mock: Quiz gerado.';
   try {
-    // Exemplo de chamada real:
-    // const geminiRes = await axios.post('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent', { contents: [{ parts: [{ text: prompt }] }] }, { params: { key: process.env.GEMINI_API_KEY } });
-    // aiResponse = geminiRes.data.candidates[0]?.content?.parts[0]?.text || aiResponse;
-  } catch (err) {
-    console.error('Erro ao chamar IA para quiz:', err.response?.data || err.message);
-    return res.status(500).json({ error: 'Erro ao chamar IA' });
-  }
+    const { preferences } = req.body;
+    if (!preferences) {
+      return res.status(400).json({ error: 'Preferências ausentes' });
+    }
 
-  // Salva no cache (Firestore caching removed)
-  // await cacheRef.set({ response: aiResponse, createdAt: new Date(), user: req.user.uid }); // REMOVE
-  res.json({ quiz: aiResponse, source: 'gemini' });
+    console.log('Recebido pedido de geração de quiz para usuário:', req.user?.uid);
+    console.log('Preferências:', preferences);
+
+    // Validação básica das preferências
+    if (!preferences.topic || preferences.topic.trim() === '') {
+      return res.status(400).json({ error: 'Tópico é obrigatório' });
+    }
+
+    if (!preferences.difficulty || !['easy', 'medium', 'hard'].includes(preferences.difficulty)) {
+      return res.status(400).json({ error: 'Dificuldade inválida' });
+    }
+
+    if (!preferences.numQuestions || preferences.numQuestions < 1 || preferences.numQuestions > 20) {
+      return res.status(400).json({ error: 'Número de questões inválido' });
+    }
+
+    // Compacta e resume preferências
+    const prompt = `Gere um quiz com base nas preferências: ${JSON.stringify(preferences)}`;
+
+    // Gera hash do prompt para cache (Firestore caching removed)
+    // const db = admin.firestore(); // REMOVE
+    // const promptHash = hashPrompt(prompt); // Keep hashPrompt if needed for other caching
+    // const cacheRef = db.collection('quizCache').doc(promptHash); // REMOVE
+    // let cached = await cacheRef.get(); // REMOVE
+    // if (cached.exists) { // REMOVE
+    //   return res.json({ quiz: cached.data().response, source: 'cache' }); // REMOVE
+    // } // REMOVE
+
+    // Chamada à Gemini (mock, substitua pela API real)
+    let aiResponse = 'Mock: Quiz gerado.';
+    try {
+      // Exemplo de chamada real:
+      // const geminiRes = await axios.post('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent', { contents: [{ parts: [{ text: prompt }] }] }, { params: { key: process.env.GEMINI_API_KEY } });
+      // aiResponse = geminiRes.data.candidates[0]?.content?.parts[0]?.text || aiResponse;
+      console.log('Resposta da IA (mock):', aiResponse);
+    } catch (err) {
+      console.error('Erro ao chamar IA para quiz:', err.response?.data || err.message);
+      return res.status(500).json({ error: 'Erro ao chamar IA' });
+    }
+
+    // Salva no cache (Firestore caching removed)
+    // await cacheRef.set({ response: aiResponse, createdAt: new Date(), user: req.user.uid }); // REMOVE
+    res.json({ quiz: aiResponse, source: 'gemini' });
+  } catch (error) {
+    console.error('Erro inesperado na rota /api/quiz:', error);
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
 });
 
 export default router;

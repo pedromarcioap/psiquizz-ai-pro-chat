@@ -173,39 +173,62 @@ const QuizGeneratorPage = () => {
         return;
       }
   const response = await fetch('http://localhost:4000/api/quiz', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({ preferences }),
-      });
-      console.log("Resposta do backend:", response);
-      const data = await response.json();
-      let quizObj = null;
-      try {
-        quizObj = typeof data.quiz === 'string' ? JSON.parse(data.quiz) : data.quiz;
-      } catch (err) {
-        setError('Erro ao interpretar resposta do backend. Tente novamente.');
-        setLoading(false);
-        return;
-      }
-      setGeneratedQuiz(quizObj);
-      setAnswers([]);
-      if (quizMode === 'prova') {
-        const timePerQuestion = 60; // 60 segundos por questão
-        setTimeLeft(quizObj.questions.length * timePerQuestion);
-        setIsTimerActive(true);
-      } else {
-        setTimeLeft(null);
-        setIsTimerActive(false);
-      }
-      setQuizStarted(true);
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify({ preferences }),
+  });
+  console.log("Resposta do backend:", response);
+  
+  if (!response.ok) {
+    const errorData = await response.json();
+    if (response.status === 401) {
+      setError('Sessão expirada. Por favor, faça login novamente.');
+      // Redirecionar para página de login
+      navigate('/auth');
       setLoading(false);
-    } catch (err) {
-      setError('Erro ao gerar quiz: ' + err.message);
-      setLoading(false);
+      return;
+    } else if (response.status === 500) {
+      setError('Erro interno do servidor. Tente novamente mais tarde.');
+    } else {
+      setError(errorData.error || 'Erro ao gerar quiz. Tente novamente.');
     }
+    setLoading(false);
+    return;
+  }
+  
+  const data = await response.json();
+  let quizObj = null;
+  try {
+    quizObj = typeof data.quiz === 'string' ? JSON.parse(data.quiz) : data.quiz;
+  } catch (err) {
+    setError('Erro ao interpretar resposta do backend. Tente novamente.');
+    setLoading(false);
+    return;
+  }
+  setGeneratedQuiz(quizObj);
+  setAnswers([]);
+  if (quizMode === 'prova') {
+    const timePerQuestion = 60; // 60 segundos por questão
+    setTimeLeft(quizObj.questions.length * timePerQuestion);
+    setIsTimerActive(true);
+  } else {
+    setTimeLeft(null);
+    setIsTimerActive(false);
+  }
+  setQuizStarted(true);
+  setLoading(false);
+} catch (err) {
+  console.error('Erro ao gerar quiz:', err);
+  if (err.name === 'TypeError' && err.message.includes('Failed to fetch')) {
+    setError('Não foi possível conectar ao servidor. Verifique se o backend está rodando.');
+  } else {
+    setError('Erro ao gerar quiz: ' + err.message);
+  }
+  setLoading(false);
+}
   }
 
   // Função para lidar com a seleção de uma opção
